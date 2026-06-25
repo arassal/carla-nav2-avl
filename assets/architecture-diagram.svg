@@ -1,0 +1,122 @@
+<svg viewBox="0 0 1200 700" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f1419;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1a1f2e;stop-opacity:1" />
+    </linearGradient>
+    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="2" dy="2" stdDeviation="3" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="700" fill="url(#bgGradient)"/>
+
+  <!-- Title -->
+  <text x="600" y="40" font-size="32" font-weight="bold" fill="#00d9ff" text-anchor="middle" font-family="Arial, sans-serif">
+    CARLA + ROS2 + Nav2 Architecture
+  </text>
+
+  <!-- Layer 1: CARLA -->
+  <rect x="50" y="100" width="250" height="200" rx="10" fill="#1e3a5f" stroke="#00d9ff" stroke-width="2" filter="url(#shadow)"/>
+  <text x="175" y="130" font-size="18" font-weight="bold" fill="#00d9ff" text-anchor="middle" font-family="Arial">CARLA Simulator</text>
+  <text x="175" y="160" font-size="13" fill="#a0d9ff" text-anchor="middle" font-family="Arial">UE5 0.10.0</text>
+  <text x="175" y="185" font-size="12" fill="#7fa0c0" text-anchor="middle" font-family="Arial">• Ego Vehicle</text>
+  <text x="175" y="205" font-size="12" fill="#7fa0c0" text-anchor="middle" font-family="Arial">• Cameras (3x)</text>
+  <text x="175" y="225" font-size="12" fill="#7fa0c0" text-anchor="middle" font-family="Arial">• Lidar / IMU / GNSS</text>
+  <text x="175" y="245" font-size="12" fill="#7fa0c0" text-anchor="middle" font-family="Arial">• Traffic & Obstacles</text>
+
+  <!-- Arrow 1 -->
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#00d9ff"/>
+    </marker>
+  </defs>
+  <line x1="300" y1="200" x2="380" y2="200" stroke="#00d9ff" stroke-width="2" marker-end="url(#arrowhead)"/>
+
+  <!-- Layer 2: CARLA Bridge -->
+  <rect x="380" y="100" width="250" height="200" rx="10" fill="#2a3f5f" stroke="#00d9ff" stroke-width="2" filter="url(#shadow)"/>
+  <text x="505" y="130" font-size="18" font-weight="bold" fill="#00d9ff" text-anchor="middle" font-family="Arial">CARLA Bridge</text>
+  <text x="505" y="160" font-size="13" fill="#a0d9ff" text-anchor="middle" font-family="Arial">Python API</text>
+  <text x="505" y="185" font-size="12" fill="#7fa0c0" text-anchor="middle" font-family="Arial">• Ego Control</text>
+  <text x="505" y="205" font-size="12" fill="#7fa0c0" text-anchor="middle" font-family="Arial">• World Sync (20 Hz)</text>
+  <text x="505" y="225" font-size="12" fill="#7fa0c0" text-anchor="middle" font-family="Arial">• Sensor Management</text>
+  <text x="505" y="245" font-size="12" fill="#7fa0c0" text-anchor="middle" font-family="Arial">• State Publishing</text>
+
+  <!-- Arrow 2 -->
+  <line x1="630" y1="200" x2="710" y2="200" stroke="#00d9ff" stroke-width="2" marker-end="url(#arrowhead)"/>
+
+  <!-- Layer 3: ROS2 Nodes -->
+  <rect x="710" y="100" width="250" height="200" rx="10" fill="#1e3a5f" stroke="#00d9ff" stroke-width="2" filter="url(#shadow)"/>
+  <text x="835" y="130" font-size="18" font-weight="bold" fill="#00d9ff" text-anchor="middle" font-family="Arial">ROS2 Nodes</text>
+  <text x="835" y="160" font-size="13" fill="#a0d9ff" text-anchor="middle" font-family="Arial">Humble (Domain 0)</text>
+  <text x="835" y="185" font-size="12" fill="#7fa0c0" text-anchor="middle" font-family="Arial">• Localization</text>
+  <text x="835" y="205" font-size="12" fill="#7fa0c0" text-anchor="middle" font-family="Arial">• Lane Path Planning</text>
+  <text x="835" y="225" font-size="12" fill="#7fa0c0" text-anchor="middle" font-family="Arial">• TF Tree (map→ego)</text>
+  <text x="835" y="245" font-size="12" fill="#7fa0c0" text-anchor="middle" font-family="Arial">• Sensor Aggregation</text>
+
+  <!-- Arrow 3 -->
+  <line x1="960" y1="200" x2="1040" y2="200" stroke="#00d9ff" stroke-width="2" marker-end="url(#arrowhead)"/>
+
+  <!-- Layer 4: Nav2 Stack -->
+  <rect x="1040" y="100" width="130" height="200" rx="10" fill="#2a3f5f" stroke="#00d9ff" stroke-width="2" filter="url(#shadow)"/>
+  <text x="1105" y="130" font-size="16" font-weight="bold" fill="#00d9ff" text-anchor="middle" font-family="Arial">Nav2</text>
+  <text x="1105" y="160" font-size="12" fill="#a0d9ff" text-anchor="middle" font-family="Arial">Stack</text>
+  <text x="1105" y="185" font-size="11" fill="#7fa0c0" text-anchor="middle" font-family="Arial">• Costmap 2D</text>
+  <text x="1105" y="205" font-size="11" fill="#7fa0c0" text-anchor="middle" font-family="Arial">• Pure Pursuit</text>
+  <text x="1105" y="225" font-size="11" fill="#7fa0c0" text-anchor="middle" font-family="Arial">• Controller</text>
+  <text x="1105" y="245" font-size="11" fill="#7fa0c0" text-anchor="middle" font-family="Arial">• Lifecycle</text>
+
+  <!-- Feedback Loop -->
+  <path d="M 1105 300 L 1105 350 L 175 350 L 175 300" stroke="#ff6b6b" stroke-width="2" fill="none" marker-end="url(#arrowhead)" stroke-dasharray="5,5"/>
+  <text x="640" y="370" font-size="12" fill="#ff6b6b" text-anchor="middle" font-family="Arial">Control Feedback Loop (20 Hz)</text>
+
+  <!-- Bottom: Output Section -->
+  <rect x="50" y="420" width="1120" height="250" rx="10" fill="rgba(30, 58, 95, 0.5)" stroke="#00d9ff" stroke-width="2" filter="url(#shadow)"/>
+
+  <text x="610" y="460" font-size="18" font-weight="bold" fill="#00d9ff" text-anchor="middle" font-family="Arial">Data Flow & Outputs</text>
+
+  <!-- Output boxes -->
+  <rect x="70" y="490" width="180" height="150" rx="8" fill="#1a2a4f" stroke="#ffd700" stroke-width="2"/>
+  <text x="160" y="520" font-size="14" font-weight="bold" fill="#ffd700" text-anchor="middle" font-family="Arial">Odometry</text>
+  <text x="160" y="545" font-size="11" fill="#c0a0ff" text-anchor="middle" font-family="Arial">/odom</text>
+  <text x="160" y="565" font-size="11" fill="#c0a0ff" text-anchor="middle" font-family="Arial">Position</text>
+  <text x="160" y="580" font-size="11" fill="#c0a0ff" text-anchor="middle" font-family="Arial">Velocity</text>
+  <text x="160" y="595" font-size="11" fill="#c0a0ff" text-anchor="middle" font-family="Arial">Orientation</text>
+  <text x="160" y="610" font-size="11" fill="#c0a0ff" text-anchor="middle" font-family="Arial">TF Tree</text>
+
+  <rect x="300" y="490" width="180" height="150" rx="8" fill="#1a2a4f" stroke="#00ff88" stroke-width="2"/>
+  <text x="390" y="520" font-size="14" font-weight="bold" fill="#00ff88" text-anchor="middle" font-family="Arial">Costmap</text>
+  <text x="390" y="545" font-size="11" fill="#c0a0ff" text-anchor="middle" font-family="Arial">/local_costmap</text>
+  <text x="390" y="565" font-size="11" fill="#c0a0ff" text-anchor="middle" font-family="Arial">2D Grid</text>
+  <text x="390" y="580" font-size="11" fill="#c0a0ff" text-anchor="middle" font-family="Arial">Obstacles</text>
+  <text x="390" y="595" font-size="11" fill="#c0a0ff" text-anchor="middle" font-family="Arial">Free Space</text>
+  <text x="390" y="610" font-size="11" fill="#c0a0ff" text-anchor="middle" font-family="Arial">Inflation</text>
+
+  <rect x="530" y="490" width="180" height="150" rx="8" fill="#1a2a4f" stroke="#ff6b9d" stroke-width="2"/>
+  <text x="620" y="520" font-size="14" font-weight="bold" fill="#ff6b9d" text-anchor="middle" font-family="Arial">Control Output</text>
+  <text x="620" y="545" font-size="11" fill="#c0a0ff" text-anchor="middle" font-family="Arial">/cmd_vel</text>
+  <text x="620" y="565" font-size="11" fill="#c0a0ff" text-anchor="middle" font-family="Arial">Linear Velocity</text>
+  <text x="620" y="580" font-size="11" fill="#c0a0ff" text-anchor="middle" font-family="Arial">Angular Velocity</text>
+  <text x="620" y="595" font-size="11" fill="#c0a0ff" text-anchor="middle" font-family="Arial">Steering Angle</text>
+  <text x="620" y="610" font-size="11" fill="#c0a0ff" text-anchor="middle" font-family="Arial">Throttle/Brake</text>
+
+  <rect x="760" y="490" width="180" height="150" rx="8" fill="#1a2a4f" stroke="#00d9ff" stroke-width="2"/>
+  <text x="850" y="520" font-size="14" font-weight="bold" fill="#00d9ff" text-anchor="middle" font-family="Arial">Sensor Data</text>
+  <text x="850" y="545" font-size="11" fill="#c0a0ff" text-anchor="middle" font-family="Arial">/camera, /lidar</text>
+  <text x="850" y="565" font-size="11" fill="#c0a0ff" text-anchor="middle" font-family="Arial">Images (3x RGB)</text>
+  <text x="850" y="580" font-size="11" fill="#c0a0ff" text-anchor="middle" font-family="Arial">Point Cloud</text>
+  <text x="850" y="595" font-size="11" fill="#c0a0ff" text-anchor="middle" font-family="Arial">IMU Data</text>
+  <text x="850" y="610" font-size="11" fill="#c0a0ff" text-anchor="middle" font-family="Arial">GNSS</text>
+
+  <rect x="990" y="490" width="150" height="150" rx="8" fill="#1a2a4f" stroke="#ffa500" stroke-width="2"/>
+  <text x="1065" y="520" font-size="14" font-weight="bold" fill="#ffa500" text-anchor="middle" font-family="Arial">Visualization</text>
+  <text x="1065" y="545" font-size="11" fill="#c0a0ff" text-anchor="middle" font-family="Arial">RViz</text>
+  <text x="1065" y="565" font-size="11" fill="#c0a0ff" text-anchor="middle" font-family="Arial">Path Planning</text>
+  <text x="1065" y="580" font-size="11" fill="#c0a0ff" text-anchor="middle" font-family="Arial">Trajectory</text>
+  <text x="1065" y="595" font-size="11" fill="#c0a0ff" text-anchor="middle" font-family="Arial">Map View</text>
+  <text x="1065" y="610" font-size="11" fill="#c0a0ff" text-anchor="middle" font-family="Arial">Live Debug</text>
+
+  <!-- Footer -->
+  <text x="600" y="680" font-size="12" fill="#7fa0c0" text-anchor="middle" font-family="Arial">Professional Sim-to-Real Autonomous Navigation Pipeline</text>
+</svg>

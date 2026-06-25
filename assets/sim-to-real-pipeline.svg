@@ -1,0 +1,119 @@
+<svg viewBox="0 0 1200 600" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0a0e17;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#151b2e;stop-opacity:1" />
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="3"/>
+      <feDropShadow dx="2" dy="2" stdDeviation="4" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="600" fill="url(#bgGrad)"/>
+
+  <!-- Title -->
+  <text x="600" y="50" font-size="36" font-weight="bold" fill="#00d9ff" text-anchor="middle" font-family="Arial, sans-serif">
+    Sim-to-Real Pipeline
+  </text>
+
+  <!-- SIMULATION PHASE -->
+  <g filter="url(#glow)">
+    <!-- Simulation Section Header -->
+    <rect x="50" y="90" width="520" height="480" rx="15" fill="rgba(30, 58, 95, 0.3)" stroke="#00d9ff" stroke-width="3"/>
+    <rect x="70" y="110" width="480" height="50" rx="10" fill="#1e3a5f" stroke="#00d9ff" stroke-width="2"/>
+    <text x="310" y="145" font-size="24" font-weight="bold" fill="#00d9ff" text-anchor="middle" font-family="Arial">SIMULATION PHASE</text>
+
+    <!-- Step 1: CARLA -->
+    <rect x="70" y="180" width="160" height="140" rx="8" fill="#2a3f5f" stroke="#ffd700" stroke-width="2"/>
+    <text x="150" y="210" font-size="14" font-weight="bold" fill="#ffd700" text-anchor="middle" font-family="Arial">CARLA</text>
+    <text x="150" y="235" font-size="11" fill="#a0d9ff" text-anchor="middle" font-family="Arial">UE5 Simulator</text>
+    <text x="150" y="255" font-size="10" fill="#7fa0c0" text-anchor="middle" font-family="Arial">• 3x Cameras</text>
+    <text x="150" y="270" font-size="10" fill="#7fa0c0" text-anchor="middle" font-family="Arial">• Lidar</text>
+    <text x="150" y="285" font-size="10" fill="#7fa0c0" text-anchor="middle" font-family="Arial">• Traffic/Weather</text>
+
+    <!-- Arrow -->
+    <path d="M 230 250 L 280 250" stroke="#00d9ff" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
+
+    <!-- Step 2: ROS2 Nav2 -->
+    <rect x="280" y="180" width="160" height="140" rx="8" fill="#2a3f5f" stroke="#00ff88" stroke-width="2"/>
+    <text x="360" y="210" font-size="14" font-weight="bold" fill="#00ff88" text-anchor="middle" font-family="Arial">ROS2 + Nav2</text>
+    <text x="360" y="235" font-size="11" fill="#a0d9ff" text-anchor="middle" font-family="Arial">Algorithm Dev</text>
+    <text x="360" y="255" font-size="10" fill="#7fa0c0" text-anchor="middle" font-family="Arial">• Path Planning</text>
+    <text x="360" y="270" font-size="10" fill="#7fa0c0" text-anchor="middle" font-family="Arial">• Control Loop</text>
+    <text x="360" y="285" font-size="10" fill="#7fa0c0" text-anchor="middle" font-family="Arial">• 20 Hz Cycle</text>
+
+    <!-- Step 3: Testing -->
+    <rect x="70" y="340" width="370" height="110" rx="8" fill="#2a3f5f" stroke="#ff6b9d" stroke-width="2"/>
+    <text x="255" y="370" font-size="14" font-weight="bold" fill="#ff6b9d" text-anchor="middle" font-family="Arial">Validation & Testing</text>
+    <text x="255" y="395" font-size="10" fill="#7fa0c0" text-anchor="middle" font-family="Arial">✓ Lane Following   ✓ Obstacle Avoidance   ✓ Traffic Lights</text>
+    <text x="255" y="415" font-size="10" fill="#7fa0c0" text-anchor="middle" font-family="Arial">✓ Dynamic Scenarios   ✓ Parameter Tuning   ✓ Edge Cases</text>
+
+    <!-- Curved arrow down -->
+    <path d="M 360 320 L 360 340" stroke="#ff6b9d" stroke-width="2" fill="none" marker-end="url(#arrowhead2)"/>
+  </g>
+
+  <!-- TRANSFER ARROW -->
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#00d9ff"/>
+    </marker>
+    <marker id="arrowhead2" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#ff6b9d"/>
+    </marker>
+    <marker id="arrowhead3" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#ffa500"/>
+    </marker>
+  </defs>
+
+  <g filter="url(#glow)">
+    <!-- Transfer Section -->
+    <line x1="570" y1="330" x2="630" y2="330" stroke="#00d9ff" stroke-width="3" marker-end="url(#arrowhead)"/>
+    <rect x="570" y="305" width="60" height="50" rx="5" fill="#1a2a4f" stroke="#00d9ff" stroke-width="2"/>
+    <text x="600" y="335" font-size="11" font-weight="bold" fill="#00d9ff" text-anchor="middle" font-family="Arial">DEPLOY</text>
+  </g>
+
+  <!-- REAL-WORLD PHASE -->
+  <g filter="url(#glow)">
+    <!-- Real World Section Header -->
+    <rect x="630" y="90" width="520" height="480" rx="15" fill="rgba(95, 30, 30, 0.3)" stroke="#ff6b6b" stroke-width="3"/>
+    <rect x="650" y="110" width="480" height="50" rx="10" fill="#5f3a3a" stroke="#ff6b6b" stroke-width="2"/>
+    <text x="890" y="145" font-size="24" font-weight="bold" fill="#ff6b6b" text-anchor="middle" font-family="Arial">REAL-WORLD PHASE</text>
+
+    <!-- Step 1: Hardware Integration -->
+    <rect x="650" y="180" width="160" height="140" rx="8" fill="#5f3a3a" stroke="#ffd700" stroke-width="2"/>
+    <text x="730" y="210" font-size="14" font-weight="bold" fill="#ffd700" text-anchor="middle" font-family="Arial">Hardware</text>
+    <text x="730" y="235" font-size="11" fill="#ffa0a0" text-anchor="middle" font-family="Arial">Real Vehicle</text>
+    <text x="730" y="255" font-size="10" fill="#c0a0a0" text-anchor="middle" font-family="Arial">• 3x USB Cameras</text>
+    <text x="730" y="270" font-size="10" fill="#c0a0a0" text-anchor="middle" font-family="Arial">• Real Lidar</text>
+    <text x="730" y="285" font-size="10" fill="#c0a0a0" text-anchor="middle" font-family="Arial">• Vehicle CAN Bus</text>
+
+    <!-- Arrow -->
+    <path d="M 810 250 L 860 250" stroke="#ff6b6b" stroke-width="2" fill="none" marker-end="url(#arrowhead3)"/>
+
+    <!-- Step 2: ROS2 Same Stack -->
+    <rect x="860" y="180" width="160" height="140" rx="8" fill="#5f3a3a" stroke="#00ff88" stroke-width="2"/>
+    <text x="940" y="210" font-size="14" font-weight="bold" fill="#00ff88" text-anchor="middle" font-family="Arial">Same ROS2</text>
+    <text x="940" y="235" font-size="11" fill="#ffa0a0" text-anchor="middle" font-family="Arial">Stack on Vehicle</text>
+    <text x="940" y="255" font-size="10" fill="#c0a0a0" text-anchor="middle" font-family="Arial">• Nav2 Running</text>
+    <text x="940" y="270" font-size="10" fill="#c0a0a0" text-anchor="middle" font-family="Arial">• Tuned Parameters</text>
+    <text x="940" y="285" font-size="10" fill="#c0a0a0" text-anchor="middle" font-family="Arial">• Live Control</text>
+
+    <!-- Step 3: Real Testing -->
+    <rect x="650" y="340" width="370" height="110" rx="8" fill="#5f3a3a" stroke="#ff6b9d" stroke-width="2"/>
+    <text x="835" y="370" font-size="14" font-weight="bold" fill="#ff6b9d" text-anchor="middle" font-family="Arial">Real-World Validation</text>
+    <text x="835" y="395" font-size="10" fill="#c0a0a0" text-anchor="middle" font-family="Arial">✓ Path Following   ✓ Obstacle Detection   ✓ Vehicle Control</text>
+    <text x="835" y="415" font-size="10" fill="#c0a0a0" text-anchor="middle" font-family="Arial">✓ Real Traffic   ✓ Parameter Refinement   ✓ Production Ready</text>
+
+    <!-- Curved arrow down -->
+    <path d="M 940 320 L 940 340" stroke="#ff6b9d" stroke-width="2" fill="none" marker-end="url(#arrowhead2)"/>
+  </g>
+
+  <!-- Key Benefits -->
+  <rect x="50" y="580" width="1100" height="0.5" fill="#00d9ff" opacity="0.5"/>
+
+  <!-- Footer -->
+  <text x="600" y="600" font-size="11" fill="#7fa0c0" text-anchor="middle" font-family="Arial">
+    Risk-free testing in simulation → Seamless deployment to real vehicle with identical ROS2 architecture
+  </text>
+</svg>
