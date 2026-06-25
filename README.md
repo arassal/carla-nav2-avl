@@ -1,242 +1,109 @@
-# CARLA + ROS2 Navigation Stack
-## AVL Mentor Project - Professional Autonomous Navigation Pipeline
+# CARLA Nav2 - Autonomous Navigation Stack
 
-Professional autonomous navigation research platform combining CARLA 0.10.0, ROS2 Humble, and Navigation2 stack. This is a **production-grade implementation** designed for seamless sim-to-real transfer to actual vehicle hardware.
+A complete autonomous navigation system built on CARLA, ROS2, and Navigation2. Designed for simulation validation before real hardware deployment.
 
----
+## What This Does
 
-## 🎯 Project Vision
+Three-camera multi-view perception system generates occupancy grids in real-time. The stack builds costmaps from sensor data, plans collision-free paths, and controls the vehicle to follow them. Everything runs through standard ROS2 topics so you can swap the simulator for real hardware without changing the core logic.
 
-**Sim-to-Real Autonomous Driving**: Develop, test, and validate autonomous navigation algorithms in high-fidelity CARLA simulation using the **exact same camera and sensor layout** as our physical vehicle, then deploy the identical ROS2 stack to real hardware.
+## The Setup
 
+**Cameras**: Front, left, right views. Each captures 1280×720 at 30 Hz. This gives you coverage of obstacles in the immediate vicinity and lane boundaries.
 
-This approach eliminates the traditional "sim-to-real gap" by ensuring hardware and software parity from day one.
+**Lidar**: 64-ray lidar gives you a proper 3D view of the environment. The costmap layer fuses this with camera data to build a 2D occupancy grid. Obstacle inflation handles safety margins automatically.
 
----
+**Costmap**: 100×100 meter grid centered on the vehicle. Free space is 0, obstacles are 255, unknown is 128. The planner uses this to find paths that avoid collisions.
 
-## 🚀 Key Capabilities
+**Planning**: Standard A* on the costmap. Produces a path as a sequence of waypoints. The controller follows it using pure pursuit steering with adaptive lookahead.
 
+**Control Loop**: Vehicle command is a `Twist` message (linear velocity, angular velocity). This gets converted to steering angle and throttle for the simulator, or CAN commands for real hardware.
 
-### Core Features
-- ✅ **Lane Following** - Regulated pure pursuit with adaptive lookahead
-- ✅ **Obstacle Avoidance** - Lidar-based 2D costmap with emergency braking
-- ✅ **Traffic Lights** - Automatic detection and enforcement
-- ✅ **Multi-Sensor Fusion** - 3× cameras + lidar + IMU + GNSS
-- ✅ **Real-Time Control** - 20 Hz deterministic control loop
-- ✅ **Safety Systems** - Emergency brake, collision detection
-- ✅ **Live Visualization** - RViz + Rerun for debugging
+## Why This Matters
 
----
+Most hobby autonomous driving projects build closed-loop simulators with custom pathfinding and hand-tuned steering gains. This is production-grade: you're using the same stack that real autonomous vehicles use. Navigation2 is maintained by a large community. Your control gains are tunable parameters, not magic numbers in Python. When you move to hardware, you're not rewriting everything.
 
-## 🏗️ System Architecture
+## Architecture
 
+Four layers that cleanly separate concerns:
 
-The system is organized in **4 distinct layers**:
+1. **Hardware**: GPU, cameras, lidar, compute. CARLA in simulation, real hardware later.
+2. **ROS2**: DDS middleware. Sensors publish messages. Nodes communicate through topics. No direct function calls.
+3. **Navigation2**: Costmap generation, path planning, controller. All pluggable components.
+4. **Application**: CARLA bridge that owns the simulation tick, converts Twist commands to vehicle control.
 
-1. **Hardware Layer** - GPU, cameras, lidar, compute platform
-2. **ROS2 Middleware** - DDS messaging, transform trees, standard message types
-3. **Navigation2 Stack** - Costmaps, planners, controllers, safety
-4. **Application Layer** - CARLA simulation, custom nodes, visualization
+The key insight: layers 2-4 don't change when you swap layer 1 from CARLA to real hardware.
 
-Each layer is **hardware-agnostic**, allowing the same code to run in CARLA and on real vehicles with minimal changes.
+## Tech Stack
 
----
+- **CARLA 0.10.0** (UE5): High-fidelity simulator with native ROS2 sensor publishing
+- **ROS2 Humble**: Mature, stable middleware
+- **Navigation2**: Industry standard for mobile robot navigation
+- **Python 3.10/3.11**: Bridge and custom nodes
+- **Ubuntu 22.04**: Stable OS, good ROS2 support
 
-## 💾 Technology Stack
-
-
-**Professional-grade components:**
-- **CARLA 0.10.0** - Unreal Engine 5 simulator with native ROS2
-- **ROS2 Humble** - Production robotics middleware
-- **Navigation2** - Industry-standard navigation stack
-- **Python 3.10/3.11** - High-performance implementation
-- **Ubuntu 22.04** - Stable, long-term support
-
----
-
-## 🔄 Development Pipeline
-
-
-### Phase 1: Simulation Development
-1. Setup CARLA environment and ROS2 bridge
-2. Configure Navigation2 stack and tune parameters
-3. Implement custom nodes (localization, planning)
-4. Add safety modules (traffic lights, emergency brake)
-5. Integration testing and validation
-6. Document all parameters and calibration values
-
-### Phase 2: Validation & Testing
-- Lane following across multiple towns and speeds
-- Obstacle detection and emergency braking
-- Traffic light recognition and enforcement
-- Dynamic scenarios (weather, traffic, pedestrians)
-- Parameter optimization
-- Sign-off for real-world deployment
-
-### Phase 3: Real-World Deployment
-1. Hardware integration (cameras, lidar, CAN bus)
-2. Camera calibration (intrinsics, extrinsics, sync)
-3. Software deployment on vehicle
-4. Closed-loop vehicle control testing
-5. Real-world validation (parking lot → streets → highway)
-6. Parameter refinement and edge case handling
-7. **Production Ready** ✓
-
----
-
-## ⚡ Quick Start
+## Quick Start
 
 ```bash
-# Clone the repository
 git clone https://github.com/arassal/carla-nav2-avl.git
 cd carla-nav2-avl
 
-# Start CARLA simulator (separate terminal)
-cd ~/carla
-./CarlaUE4.sh -quality-level=Low
+# Start CARLA
+cd ~/carla && ./CarlaUE4.sh -quality-level=Low
 
-# Build ROS2 workspace
+# Build and run the stack
 cd carla-nav2-avl/ros2_ws
 colcon build
-
-# Run the complete stack
 source install/setup.bash
 ../scripts/run_stack.sh
 ```
 
----
+## Requirements
 
-## 📋 Requirements
+- Ubuntu 22.04
+- ROS2 Humble
+- CARLA 0.10.0 (built from source)
+- NVIDIA GPU (RTX 5090 tested, RTX 5070 Ti works)
+- 32GB RAM, 12GB VRAM minimum
+- CUDA 12.x
 
-| Component | Specification |
-|-----------|---------------|
-| **OS** | Ubuntu 22.04 LTS |
-| **ROS2** | Humble |
-| **CARLA** | 0.10.0 (UE5) - built from source |
-| **GPU** | NVIDIA RTX (RTX 5090 recommended, RTX 5070 Ti validated) |
-| **RAM** | 32GB+ system, 12GB+ VRAM |
-| **CUDA** | 12.x |
-| **Python** | 3.10 (ROS2), 3.11 (CARLA) |
+## What Works
 
----
+- Lane following on any CARLA town using the OpenDRIVE map
+- Obstacle detection from lidar, stops the vehicle if something's in the way
+- Traffic light enforcement (reads light state, stops on red)
+- Multi-camera perception without any custom vision code
+- Costmap generation updates in real-time as the vehicle moves
+- Full ROS2 integration (everything on standard topics)
 
-## 📁 Repository Structure
+## Tested Scenarios
 
-```
-carla-nav2-avl/
-├── ros2_ws/src/                  # ROS2 workspace
-│   ├── world_setup/              # CARLA Python bridge
-│   ├── controller/               # Nav2 nodes & vehicle control
-│   ├── sdc_bringup/              # Launch files & configurations
-│   └── carla_msgs/               # Custom message definitions
-├── scripts/                      # Launch scripts & utilities
-├── assets/                       # Professional diagrams & visuals
-├── CONTRIBUTORS.md               # Team members
-├── CONTRIBUTION_GUIDE.md         # Development workflow
-└── README.md                     # This file
-```
+- All CARLA towns (Town01-Town10)
+- Different weather (rain, fog, night)
+- Heavy traffic, pedestrians crossing
+- Edge cases like occlusion, parked vehicles
 
----
+## Repository
 
-## 👥 Team
+- Main code: `ros2_ws/src/`
+- CARLA bridge: `world_setup/`
+- Nav2 configuration: `scripts/nav2.yaml`
+- Custom nodes: `controller/`
 
-**Project Leader**: alexander (@arassal)
+## Team
 
-**Mentees**: jchy05, AdamCastillo07, adrian (@Ad-Tap)
+- **alexander** (@arassal) — CARLA integration, architecture
+- **jchy05** — Nav2 configuration and tuning
+- **AdamCastillo07** — Visualization and debugging
+- **adrian** (@Ad-Tap) — Control system refinement
 
-Each team member works on their dedicated feature branch with synchronized integration through the `develop` branch.
+See `CONTRIBUTORS.md` and `CONTRIBUTION_GUIDE.md` for details.
 
-See [CONTRIBUTORS.md](CONTRIBUTORS.md) and [CONTRIBUTION_GUIDE.md](CONTRIBUTION_GUIDE.md) for details.
+## Next Steps
 
----
-
-## 🔬 Validation Status
-
-✅ **CARLA Simulator**
-- All towns (Town01-Town10) validated
-- Multiple weather conditions tested
-- Dynamic traffic scenarios working
-- Pedestrian handling proven
-
-✅ **ROS2 Integration**
-- 20 Hz control loop stable
-- 40-50 ms end-to-end latency
-- CPU efficiency: 30-40% utilization
-- Memory footprint: 2.5 GB
-
-✅ **Navigation2 Stack**
-- Pure pursuit controller tuned
-- Costmap generation optimized
-- Path planning validated
-- Safety layers operational
-
-✅ **Multi-Sensor System**
-- 3-camera synchronization working
-- Lidar integration complete
-- IMU/GNSS publishing operational
-- Time-synced data flow verified
+Currently validated in simulation. Real hardware integration is in progress. The architecture supports it directly: swap the CARLA bridge for a real vehicle interface, keep everything else.
 
 ---
 
-## 📊 Performance Metrics
+Code: https://github.com/arassal/carla-nav2-avl
 
-- **Control Loop**: 20 Hz deterministic
-- **End-to-End Latency**: 40-50 ms
-- **CPU Usage**: 30-40% per control cycle
-- **Memory**: 2.5 GB active, 5 GB total
-- **Maximum Speed**: 8 m/s (28.8 km/h) - safe operational limit
-- **Supported Environments**: All CARLA towns, all weather conditions
-- **Safety Margin**: 100% obstacle inflation radius
-
----
-
-## 🎓 Educational Value
-
-This project demonstrates:
-- Professional ROS2 architecture
-- Autonomous driving fundamentals
-- Sensor fusion techniques
-- Real-time control systems
-- Sim-to-real transfer methodology
-- Hardware-agnostic software design
-- Team-based collaborative development
-
----
-
-## 📚 Documentation
-
-- [Architecture Deep Dive](docs/architecture.md) - System design and data flows
-- [Setup Guide](docs/setup.md) - Installation and build instructions
-- [Contribution Guide](CONTRIBUTION_GUIDE.md) - How to contribute
-- [Contributors](CONTRIBUTORS.md) - Team information
-- [Tuning Guide](docs/tuning.md) - Parameter optimization
-
----
-
-## 🔗 Resources
-
-- [CARLA Simulator](https://carla.readthedocs.io/)
-- [ROS2 Documentation](https://docs.ros.org/)
-- [Navigation2 Stack](https://navigation.ros.org/)
-- [Autonomous Driving Guide](https://github.com/arassal/carla-nav2-avl)
-
----
-
-## 📄 License
-
-Original work by AVL mentor team 2026
-
----
-
-## 🚀 Next Milestones
-
-- [ ] Real vehicle hardware integration
-- [ ] Camera calibration on physical platform
-- [ ] Closed-loop control validation
-- [ ] Traffic light detection on real traffic
-- [ ] Multi-vehicle coordination
-- [ ] Full autonomous mission planning
-
----
-
-**Built with professional-grade tools for production deployment** 🎯
+Documentation: See `CONTRIBUTION_GUIDE.md` for development workflow.
