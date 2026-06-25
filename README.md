@@ -1,8 +1,6 @@
 # CARLA + ROS2 Navigation Stack
 ## AVL Mentor Project - Professional Autonomous Navigation Pipeline
 
-![Hero Banner](https://raw.githubusercontent.com/arassal/carla-nav2-avl/main/assets/hero-banner.svg)
-
 Professional autonomous navigation research platform combining CARLA 0.10.0, ROS2 Humble, and Navigation2 stack. This is a **production-grade implementation** designed for seamless sim-to-real transfer to actual vehicle hardware.
 
 ---
@@ -11,7 +9,6 @@ Professional autonomous navigation research platform combining CARLA 0.10.0, ROS
 
 **Sim-to-Real Autonomous Driving**: Develop, test, and validate autonomous navigation algorithms in high-fidelity CARLA simulation using the **exact same camera and sensor layout** as our physical vehicle, then deploy the identical ROS2 stack to real hardware.
 
-![Sim-to-Real Pipeline](https://raw.githubusercontent.com/arassal/carla-nav2-avl/main/assets/sim-to-real-pipeline.svg)
 
 This approach eliminates the traditional "sim-to-real gap" by ensuring hardware and software parity from day one.
 
@@ -19,7 +16,6 @@ This approach eliminates the traditional "sim-to-real gap" by ensuring hardware 
 
 ## 🚀 Key Capabilities
 
-![Capabilities Matrix](https://raw.githubusercontent.com/arassal/carla-nav2-avl/main/assets/capabilities-matrix.svg)
 
 ### Core Features
 - ✅ **Lane Following** - Regulated pure pursuit with adaptive lookahead
@@ -34,7 +30,6 @@ This approach eliminates the traditional "sim-to-real gap" by ensuring hardware 
 
 ## 🏗️ System Architecture
 
-![Complete Architecture](https://raw.githubusercontent.com/arassal/carla-nav2-avl/main/assets/architecture-advanced.svg)
 
 The system is organized in **4 distinct layers**:
 
@@ -49,7 +44,6 @@ Each layer is **hardware-agnostic**, allowing the same code to run in CARLA and 
 
 ## 💾 Technology Stack
 
-![Tech Stack](https://raw.githubusercontent.com/arassal/carla-nav2-avl/main/assets/tech-stack.svg)
 
 **Professional-grade components:**
 - **CARLA 0.10.0** - Unreal Engine 5 simulator with native ROS2
@@ -62,7 +56,6 @@ Each layer is **hardware-agnostic**, allowing the same code to run in CARLA and 
 
 ## 🔄 Development Pipeline
 
-![Deployment Workflow](https://raw.githubusercontent.com/arassal/carla-nav2-avl/main/assets/deployment-workflow.svg)
 
 ### Phase 1: Simulation Development
 1. Setup CARLA environment and ROS2 bridge
