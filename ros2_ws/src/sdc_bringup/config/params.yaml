@@ -1,0 +1,16 @@
+controller:
+  ros__parameters:
+    target_speed: 6.0
+    lookahead: 6.0
+    wheelbase: 2.8
+    goal_radius: 3.0
+collision_guard:
+  ros__parameters:
+    half_width: 1.5
+    z_lo: -1.0
+    z_hi: 1.0
+    x_max: 50.0
+    ttc_brake: 1.5
+    ttc_slow: 3.0
+    stop_dist: 4.0
+    lidar_timeout: 0.5

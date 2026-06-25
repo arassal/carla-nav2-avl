@@ -1,0 +1,22 @@
+town: Town10HD_Opt
+spawn_point_index: 0
+vehicle: vehicle.lincoln.mkz
+ego_ros_name: ego
+fixed_delta_seconds: 0.05
+sensors:
+  - type: sensor.lidar.ray_cast
+    ros_name: ego/lidar
+    attrs: {range: "50", rotation_frequency: "20", channels: "32", points_per_second: "300000"}
+    xyz: [0.0, 0.0, 2.4]
+  - type: sensor.camera.rgb
+    ros_name: ego/rgb
+    attrs: {image_size_x: "640", image_size_y: "360"}
+    xyz: [1.5, 0.0, 1.6]
+  - type: sensor.other.gnss
+    ros_name: ego/gnss
+    attrs: {}
+    xyz: [0.0, 0.0, 1.6]
+  - type: sensor.other.imu
+    ros_name: ego/imu
+    attrs: {}
+    xyz: [0.0, 0.0, 1.6]
