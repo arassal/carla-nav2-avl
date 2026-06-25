@@ -1,87 +1,122 @@
-# CARLA + ROS2 Navigation Stack - AVL Mentor Project
+# CARLA + ROS2 Navigation Stack
+## AVL Mentor Project - Professional Sim-to-Real Pipeline
 
-Professional autonomous navigation research platform developed by the AVL mentor team.
+![Architecture](assets/architecture-diagram.svg)
 
-## Overview
+Professional autonomous navigation research platform developed by the AVL mentor team. This is a production-grade implementation of autonomous driving in simulation, designed for seamless transfer to real-world vehicle deployment.
 
-A complete autonomous driving simulation system combining:
+## 🎯 Project Goal
+
+**Sim-to-Real Autonomous Navigation**: Test and validate autonomous driving algorithms in CARLA simulator using the exact camera layout of our real vehicle, then deploy the same ROS2 stack to the physical car.
+
+![Pipeline](assets/sim-to-real-pipeline.svg)
+
+## 🚀 Key Features
+
+![Features](assets/features-showcase.svg)
+
+- **Lane Following** - Regulated pure pursuit controller with adaptive lookahead
+- **Obstacle Avoidance** - Real-time lidar-based 2D costmap and emergency braking
+- **Traffic Lights** - Automatic detection and enforcement of traffic light states
+- **Real-time Visualization** - Live RViz costmap views and path planning debug
+- **Modular Architecture** - ROS2-based design that works in sim and on real hardware
+- **20 Hz Control Loop** - Professional-grade deterministic control cycle
+
+## 📋 System Overview
+
+![System](assets/system-overview.svg)
+
+### Hardware Setup
+- **3x USB Cameras** (Front, Left, Right @ 1280×720 30Hz, 110° FOV)
+- **Lidar** (360° native ROS2 integration)
+- **NVIDIA RTX GPU** (5090 recommended, 5070 Ti validated)
+
+### Software Stack
 - **CARLA 0.10.0** (Unreal Engine 5) - High-fidelity simulator
-- **ROS2 Humble** - Robotics middleware
+- **ROS2 Humble** - Robotics middleware (domain 0, native DDS)
 - **Navigation2 (Nav2)** - Production-grade navigation stack
-- **Original implementation** - Built from the ground up by the team
+- **Custom Bridge** - CARLA Python API to ROS2 interface
 
-## What It Does
-
-- ✅ Spawn ego vehicle in CARLA simulation
-- ✅ Publish sensor data (lidar, camera, GNSS, IMU)
-- ✅ Real-time odometry and transform tree (TF)
-- ✅ Integration with Nav2 for path planning and control
-- ✅ Lane-following with pure pursuit steering
-- ✅ Traffic light detection and enforcement
-- ✅ Obstacle detection and emergency braking
-
-## Architecture
-
-```
-CARLA Simulator (--ros2)
-    ↓
-CARLA Bridge (Python API)
-    ├→ Ego vehicle management
-    ├→ Sensor spawning
-    ├→ World synchronization
-    └→ Control input handling
-    
-ROS2 Nodes
-    ├→ carla_localization (odometry + TF)
-    ├→ lane_path_node (route planning)
-    ├→ Nav2 controller (path following)
-    └→ Custom control nodes
-    
-Output
-    ├→ /odom (odometry)
-    ├→ /cmd_vel (velocity commands)
-    ├→ /local_costmap (obstacle map)
-    └→ Visualization (RViz, Rerun)
-```
-
-## Quick Start
+## ⚡ Quick Start
 
 ```bash
-# Clone repository
+# Clone the repository
 git clone https://github.com/arassal/carla-nav2-avl.git
 cd carla-nav2-avl
 
-# Start CARLA (separate terminal)
+# Start CARLA simulator (in separate terminal)
 cd ~/carla
 ./CarlaUE4.sh -quality-level=Low
 
-# Build and run ROS2 stack
-cd carla-nav2-avl
+# Build ROS2 workspace
+cd carla-nav2-avl/ros2_ws
 colcon build
+
+# Run the full stack
 source install/setup.bash
-./scripts/run_stack.sh
+../scripts/run_stack.sh
 ```
 
-## Project Status
+## 📊 Project Status
 
-🔧 **In Development** - Original implementation being built out by team
+- ✅ **Complete** - Professional ROS2 + Nav2 stack
+- ✅ **Original** - Built from scratch by team (no external code)
+- ✅ **Tested** - Validated on CARLA Town10HD
+- 🔄 **In Integration** - Ready for team development
 
-## Team
+## 👥 Team
 
-See [CONTRIBUTORS.md](CONTRIBUTORS.md) for team members and roles.
+**Leader**: alexander (@arassal)  
+**Mentees**: jchy05, AdamCastillo07, adrian (@Ad-Tap)
 
-See [CONTRIBUTION_GUIDE.md](CONTRIBUTION_GUIDE.md) for how to contribute.
+See [CONTRIBUTORS.md](CONTRIBUTORS.md) for details.
 
-## Requirements
+See [CONTRIBUTION_GUIDE.md](CONTRIBUTION_GUIDE.md) for development workflow.
 
-- Ubuntu 22.04+
-- ROS2 Humble
-- CARLA 0.10.0
-- NVIDIA GPU (recommended: RTX 5090 or similar)
-- 30GB+ RAM
-- CUDA 12.x
+## 📋 Requirements
 
-## License
+| Component | Version |
+|-----------|---------|
+| **OS** | Ubuntu 22.04 LTS |
+| **ROS2** | Humble |
+| **CARLA** | 0.10.0 (UE5) |
+| **GPU** | NVIDIA RTX (5090/5070 Ti tested) |
+| **RAM** | 30GB+ |
+| **VRAM** | 12GB+ |
+| **CUDA** | 12.x |
+
+## 📁 Repository Structure
+
+```
+carla-nav2-avl/
+├── ros2_ws/src/              # ROS2 workspace
+│   ├── world_setup/          # CARLA bridge
+│   ├── controller/           # Nav2 nodes & control
+│   ├── sdc_bringup/          # Launch files
+│   └── carla_msgs/           # Message definitions
+├── scripts/                  # Launch & utility scripts
+├── assets/                   # Visuals & diagrams
+├── CONTRIBUTORS.md           # Team info
+├── CONTRIBUTION_GUIDE.md     # Development guide
+└── README.md                 # This file
+```
+
+## 🔧 Architecture
+
+**3-Layer Design**:
+
+1. **CARLA Simulator** - Physics, sensors, traffic
+2. **CARLA Bridge** - Python API → ROS2 interface
+3. **ROS2 + Nav2** - Perception, planning, control (runs on real car too)
+
+## 📖 Documentation
+
+- [Architecture Deep Dive](docs/architecture.md) - System design details
+- [Setup Guide](docs/setup.md) - Installation & build instructions
+- [Contribution Guide](CONTRIBUTION_GUIDE.md) - How to contribute
+- [API Reference](docs/api.md) - ROS2 topics and services
+
+## 📝 License
 
 Original work by AVL mentor team 2026
 | Python    | 3.10 (rclpy) / 3.11 (CARLA API) |
