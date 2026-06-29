@@ -1,5 +1,8 @@
 # Perception Scripts
 
+Author: Adam Castillo ([@AdamCastillo07](https://github.com/AdamCastillo07))
+
+
 - `costmap.py` — HSV color-thresholding road segmentation + obstacle
   detection + A* path planning. Satisfies "Image Thresholding &
   Color-based Lane/Feature Segmentation" task.

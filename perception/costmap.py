@@ -1,7 +1,9 @@
 """
 costmap.py
 ----------
-Beginner-friendly costmap pipeline for a top-down (BEV) road image.
+Author: Adam Castillo (@AdamCastillo07)
+
+Costmap pipeline for a top-down (BEV) road image.
 
 Pipeline:
   1. ROAD SEGMENTATION  -> drawn GREEN
@@ -184,18 +186,36 @@ def build_cost_grid(road_mask, obstacle_mask, grid_size=(40, 60)):
 
 
 # ----------------------------------------------------------------------
-# 4. PATH PLANNING -- A* from left edge to right edge
+# 4. PATH PLANNING -- A* across the grid
 # ----------------------------------------------------------------------
-def astar_left_to_right(cost_grid):
+def plan_path(cost_grid, direction="horizontal"):
     """
-    Finds the cheapest path from ANY cell in the left column to ANY cell
-    in the right column, moving 4- or 8-connected, summing cell costs.
-    Cells with cost 100 (obstacles) are treated as impassable.
+    Finds the cheapest path across the grid, 8-connected, summing cell
+    costs. Cells with cost 100 (obstacles) are impassable.
+
+    direction:
+        "horizontal" -- left edge  -> right edge  (road runs across frame)
+        "vertical"   -- top edge   -> bottom edge (road runs up the frame)
+
+    A top-down camera can have the road running either way depending on
+    mounting, so the entry/exit edges are picked from `direction` rather
+    than hard-coded.
 
     Returns: list of (row, col) cells from start to goal, or None.
     """
     rows, cols = cost_grid.shape
     BLOCKED = 100
+
+    if direction == "horizontal":
+        starts = [(r, 0) for r in range(rows)]
+        is_goal = lambda r, c: c == cols - 1
+        heuristic = lambda r, c: cols - 1 - c   # cells still to cross rightward
+    elif direction == "vertical":
+        starts = [(0, c) for c in range(cols)]
+        is_goal = lambda r, c: r == rows - 1
+        heuristic = lambda r, c: rows - 1 - r   # cells still to cross downward
+    else:
+        raise ValueError(f"direction must be 'horizontal' or 'vertical', got {direction!r}")
 
     def neighbors(r, c):
         for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1),
@@ -204,24 +224,21 @@ def astar_left_to_right(cost_grid):
             if 0 <= nr < rows and 0 <= nc < cols:
                 yield nr, nc
 
-    def heuristic(r, c):
-        return cols - c  # encourages moving rightward
-
-    # multi-source A*: push every free cell in column 0 as a start.
+    # multi-source A*: push every free cell on the entry edge as a start.
     # NOTE: we use a counter as a tie-breaker in the heap instead of
     # letting Python fall back to comparing (row, col) tuples directly.
     # Without this, ties (which are common -- many free cells cost the
-    # same) always resolve in favor of the smallest row, which is why
-    # the path used to hug the top edge of the image no matter what.
+    # same) always resolve in favor of the smallest cell, which made the
+    # path hug one edge of the image no matter what.
     counter = 0
     open_heap = []
     g_score = {}
     came_from = {}
 
-    for r in range(rows):
-        if cost_grid[r, 0] < BLOCKED:
-            g_score[(r, 0)] = cost_grid[r, 0]
-            heapq.heappush(open_heap, (g_score[(r, 0)] + heuristic(r, 0), counter, (r, 0)))
+    for (sr, sc) in starts:
+        if cost_grid[sr, sc] < BLOCKED:
+            g_score[(sr, sc)] = cost_grid[sr, sc]
+            heapq.heappush(open_heap, (g_score[(sr, sc)] + heuristic(sr, sc), counter, (sr, sc)))
             counter += 1
 
     visited = set()
@@ -234,7 +251,7 @@ def astar_left_to_right(cost_grid):
         visited.add(current)
 
         r, c = current
-        if c == cols - 1:
+        if is_goal(r, c):
             goal_node = current
             break
 
@@ -357,6 +374,9 @@ def main():
                          help="ignore obstacle blobs smaller than this many pixels (raises this = fewer false-positive obstacles)")
     parser.add_argument("--debug", action="store_true",
                          help="also save road_mask / road_extent / obstacle_mask / cost_grid as separate images")
+    parser.add_argument("--direction", type=str, default="horizontal",
+                         choices=["horizontal", "vertical"],
+                         help="road travel direction across the frame (left->right or top->bottom)")
     args = parser.parse_args()
 
     if args.demo or args.image is None:
@@ -380,7 +400,7 @@ def main():
     cost_grid = build_cost_grid(road_mask, obstacle_mask,
                                  grid_size=(args.grid_rows, args.grid_cols))
 
-    path = astar_left_to_right(cost_grid)
+    path = plan_path(cost_grid, direction=args.direction)
 
     result = render_costmap(img, road_mask, obstacle_mask, cost_grid, path)
 

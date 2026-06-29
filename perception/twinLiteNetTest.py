@@ -1,6 +1,8 @@
 """
 twinLiteNetTest.py
 -----------------------
+Author: Adam Castillo (@AdamCastillo07)
+
 Runs TwinLiteNet+ (drivable-area + lane segmentation) on a dashcam video.
 
 This is a CPU/GPU-flexible wrapper around the official TwinLiteNetPlus repo's
