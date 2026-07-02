@@ -53,18 +53,55 @@ def detect_obstacles_camera(img_bgr, road_mask, min_area: int = 150) -> np.ndarr
     return clean
 
 
-def detect_obstacles_yolo(img_bgr, classes=("car", "truck", "bus", "person")) -> np.ndarray:
-    """YOLO vehicle/person boxes rasterised to an image-space mask. Optional
-    dependency: ``pip install ultralytics``."""
-    from ultralytics import YOLO          # lazy: optional dependency
-    model = YOLO("yolov8n.pt")
-    res = model(img_bgr, verbose=False)[0]
-    mask = np.zeros(img_bgr.shape[:2], dtype=bool)
-    for box in res.boxes:
-        if res.names[int(box.cls[0])] in classes:
-            x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
-            mask[y1:y2, x1:x2] = True
+def boxes_to_footprint_mask(boxes_xyxy, image_shape, footprint_frac=0.25):
+    """
+    Rasterise detector boxes as *ground-contact strips*, not full boxes.
+
+    IPM assumes every pixel lies on the ground plane. A vehicle's upper pixels
+    are 1-2 m above it, so warping a full box smears "obstacle" many metres
+    down-range. Only the bottom footprint_frac of each box (where the object
+    meets the road) is geometrically valid to project.
+    """
+    h, w = image_shape[:2]
+    mask = np.zeros((h, w), dtype=bool)
+    for x1, y1, x2, y2 in boxes_xyxy:
+        x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+        strip = max(1, int(round((y2 - y1) * footprint_frac)))
+        r0, r1 = max(0, y2 - strip), min(h, y2)
+        c0, c1 = max(0, x1), min(w, x2)
+        if r1 > r0 and c1 > c0:
+            mask[r0:r1, c0:c1] = True
     return mask
+
+
+class YoloObstacleDetector:
+    """YOLOv8 wrapper that loads the network ONCE (the old per-call load was
+    ~100x slower than inference itself). Pass a .engine file to run TensorRT
+    on the Jetson -- ultralytics handles both formats."""
+
+    DEFAULT_CLASSES = ("car", "truck", "bus", "person", "bicycle", "motorcycle")
+
+    def __init__(self, weights="yolov8n.pt", classes=DEFAULT_CLASSES,
+                 conf=0.35, footprint_frac=0.25, device=None):
+        from ultralytics import YOLO          # lazy: optional dependency
+        self.model = YOLO(weights)
+        self.classes = set(classes)
+        self.conf = conf
+        self.footprint_frac = footprint_frac
+        self.device = device
+
+    def detect(self, img_bgr):
+        res = self.model(img_bgr, verbose=False, conf=self.conf,
+                         device=self.device)[0]
+        boxes = [b.xyxy[0].tolist() for b in res.boxes
+                 if res.names[int(b.cls[0])] in self.classes]
+        return boxes_to_footprint_mask(boxes, img_bgr.shape, self.footprint_frac)
+
+
+def detect_obstacles_yolo(img_bgr, classes=YoloObstacleDetector.DEFAULT_CLASSES):
+    """One-shot convenience kept for scripts. For anything per-frame use
+    YoloObstacleDetector so the model loads once."""
+    return YoloObstacleDetector(classes=classes).detect(img_bgr)
 
 
 # --------------------------------------------------------------------------

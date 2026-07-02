@@ -23,6 +23,13 @@ perception_costmap:
     segmentation_method: hsv      # hsv | twinlitenet (learned, not wired yet)
     use_camera_obstacles: true
     use_lidar: true
+    # obstacle_method: classical = no deps, yolo = accurate classes + Jetson
+    # .engine path, both = union. yolo/both require `pip install ultralytics`
+    # and fall back to classical (with a warning) if it's missing.
+    obstacle_method: classical
+    yolo_weights: yolov8n.pt      # .pt or .engine (TensorRT, Jetson)
+    yolo_conf: 0.35
+    yolo_footprint_frac: 0.25
     lidar_z_min: 0.2              # drop ground returns below this height
     lidar_z_max: 2.5             # drop returns above the roofline
 

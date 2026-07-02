@@ -46,6 +46,12 @@ class CostmapNode(Node):
             ("segmentation_method", "hsv"),
             ("use_camera_obstacles", True),
             ("use_lidar", True),
+            # obstacle_method: classical = no deps, yolo = accurate classes +
+            # Jetson .engine path, both = union
+            ("obstacle_method", "classical"),
+            ("yolo_weights", "yolov8n.pt"),
+            ("yolo_conf", 0.35),
+            ("yolo_footprint_frac", 0.25),
             ("lidar_z_min", 0.2), ("lidar_z_max", 2.5),
             # IPM: "points" uses image_pts/world_pts; "camera" uses K+mounting
             ("ipm_mode", "points"),
@@ -69,6 +75,7 @@ class CostmapNode(Node):
         self.seg_method = g["segmentation_method"]
         self.use_cam_obs = g["use_camera_obstacles"]
         self.use_lidar = g["use_lidar"]
+        self.obstacle_method = g["obstacle_method"]
         self.z_min, self.z_max = g["lidar_z_min"], g["lidar_z_max"]
         self.ipm_mode = g["ipm_mode"]
         self.ipm_image_pts = np.array(g["ipm_image_pts"], float).reshape(4, 2)
@@ -81,6 +88,19 @@ class CostmapNode(Node):
             hit=g["temporal_hit"], miss=g["temporal_miss"],
             threshold=g["temporal_threshold"],
         )
+
+        # models must warm-load at startup, never mid-drive
+        self.yolo = None
+        if g["obstacle_method"] in ("yolo", "both"):
+            try:
+                self.yolo = obstacles.YoloObstacleDetector(
+                    weights=g["yolo_weights"], conf=g["yolo_conf"],
+                    footprint_frac=g["yolo_footprint_frac"])
+                self.get_logger().info("YOLO obstacle detector loaded: %s" % g["yolo_weights"])
+            except ImportError:
+                self.get_logger().warn(
+                    "obstacle_method=%s but ultralytics not installed; "
+                    "falling back to classical" % g["obstacle_method"])
 
         self._bridge = None          # cv_bridge, created lazily
         self._latest_img = None      # bgr ndarray
@@ -157,7 +177,11 @@ class CostmapNode(Node):
             road_bev = bev.warp_to_bev(road.astype(np.uint8) * 255, self._H, self.grid) > 127
             known = self._known
             if self.use_cam_obs:
-                obs_img = obstacles.detect_obstacles_camera(self._latest_img, road)
+                obs_img = np.zeros(self._latest_img.shape[:2], bool)
+                if self.obstacle_method in ("classical", "both") or self.yolo is None:
+                    obs_img |= obstacles.detect_obstacles_camera(self._latest_img, road)
+                if self.yolo is not None:
+                    obs_img |= self.yolo.detect(self._latest_img)
                 obst_grid |= bev.warp_to_bev(
                     obs_img.astype(np.uint8) * 255, self._H, self.grid) > 127
 
