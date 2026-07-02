@@ -22,6 +22,7 @@ from perception_costmap.segmentation import create_segmenter
 
 
 def timed(fn, frames):
+    out = fn(frames[0])            # warm-up: JIT/CUDA/autotune outside the clock
     t0 = time.perf_counter()
     for f in frames:
         out = fn(f)
@@ -55,35 +56,43 @@ def main():
     seg = create_segmenter("hsv")
     road, ms = timed(seg, frames)
     rows.append(("segment (hsv)", ms))
+    seg_ms, seg_name = ms, "segment (hsv)"
 
     if args.twinlite_repo and args.twinlite_weights:
         tl = create_segmenter("twinlitenet", repo_path=args.twinlite_repo,
                               weights=args.twinlite_weights)
         _, ms = timed(tl, frames)
         rows.append(("segment (twinlitenet)", ms))
+        seg_ms, seg_name = ms, "segment (twinlitenet)"
 
     _, ms = timed(lambda f: obstacles.detect_obstacles_camera(f, road), frames)
     rows.append(("obstacles (classical)", ms))
+    obs_ms, obs_name = ms, "obstacles (classical)"
 
     if args.yolo_weights:
         det = obstacles.YoloObstacleDetector(weights=args.yolo_weights)
         _, ms = timed(det.detect, frames)
         rows.append(("obstacles (yolo)", ms))
+        obs_ms, obs_name = ms, "obstacles (yolo)"
 
     road_u8 = road.astype(np.uint8) * 255
     _, ms = timed(lambda f: bev.warp_to_bev(road_u8, H, grid), frames)
     rows.append(("bev warp", ms))
+    warp_ms = ms
 
     road_bev = bev.warp_to_bev(road_u8, H, grid) > 127
     obst = np.zeros_like(road_bev)
     _, ms = timed(lambda f: build_cost_array(grid, road_bev, obst), frames)
     rows.append(("build cost array", ms))
+    cost_ms = ms
 
-    total = sum(ms for _, ms in rows)
+    chosen = [seg_name, obs_name, "bev warp", "build cost array"]
+    total = seg_ms + obs_ms + warp_ms + cost_ms
     print("\n%-24s %8s" % ("stage", "ms/frame"))
     for name, ms in rows:
         print("%-24s %8.2f" % (name, ms))
-    print("%-24s %8.2f  (~%.1f Hz worst-case serial)" % ("TOTAL", total, 1000.0 / total))
+    print("%-24s %8.2f  (~%.1f Hz, deployed-config serial: %s)"
+          % ("TOTAL", total, 1000.0 / total, " + ".join(chosen)))
 
 
 if __name__ == "__main__":

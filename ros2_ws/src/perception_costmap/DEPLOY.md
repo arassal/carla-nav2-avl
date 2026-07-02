@@ -5,20 +5,24 @@ never runs here (x86 only) — `tools/carla_feed.py` is replaced by real camera
 and lidar drivers publishing the same topics.
 
 ## 0. Facts that decide everything
-- Kernel 5.15.148-tegra => JetPack 5.x => Ubuntu 20.04 => native ROS2 is
-  **Foxy**. Our target is Humble. Two options:
-  a) (recommended) run the stack in a Humble container:
-     `dustynv/ros:humble-desktop-l4t-r35.4.1` with `--runtime nvidia`, or
-  b) build on Foxy natively — this package avoids Humble-only APIs, but Nav2
-     Foxy is EOL; prefer (a).
-- 8 GB RAM shared CPU/GPU. Add swap before building: 
+- Kernel 5.15.148-tegra => L4T R36.4 => JetPack 6.1 => Ubuntu 22.04 => native
+  ROS2 is **Humble** — exactly our target. Install ROS2 Humble + Nav2 natively;
+  no container needed. Confirm on the unit before proceeding:
+  `uname -r && cat /etc/nv_tegra_release` (expect R36.x). If it reports R35.x
+  (JetPack 5 / Ubuntu 20.04) instead, use a Humble container matching the
+  host L4T version (e.g. dustynv/ros:humble-* for the same r35.x tag) —
+  container userspace must match the host L4T major version.
+- 8 GB RAM shared CPU/GPU. Add swap before building:
   `sudo fallocate -l 8G /swap && sudo mkswap /swap && sudo swapon /swap`
-- Power: `sudo nvpmodel -m 0 && sudo jetson_clocks` (MAXN) before benchmarks.
+- Power: check modes with `sudo nvpmodel -q --verbose`, then select MAXN
+  (index varies by board/JetPack — commonly `sudo nvpmodel -m 0`) and
+  `sudo jetson_clocks` before benchmarks.
 
 ## 1. Torch/ultralytics (inside the container or JetPack env)
 - NEVER `pip install torch` — that pulls a CPU wheel. Use NVIDIA's Jetson
-  wheel matching the JetPack version (developer.nvidia.com/embedded → PyTorch
-  for Jetson), then `pip install ultralytics --no-deps` + its light deps.
+  wheel matching the JetPack version (6.1 here) (developer.nvidia.com/embedded
+  → PyTorch for Jetson), then `pip install ultralytics --no-deps` + its light
+  deps.
 
 ## 2. Build + verify (10 min)
     cd ros2_ws && colcon build --packages-select perception_costmap
