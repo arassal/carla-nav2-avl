@@ -27,14 +27,62 @@ from .util import stamp_to_sec, is_fresh
 from .temporal import TemporalObstacleFilter
 
 
+class CameraSource:
+    """One camera: its subscriptions, latest frame, homography and FOV mask.
+    All parameters live under '<name>.' so a 3-camera car is 3 YAML blocks."""
+
+    def __init__(self, node, name, grid):
+        self.name, self.grid = name, grid
+        d = lambda key, val: node.declare_parameter("%s.%s" % (name, key), val).value
+        self.ipm_mode = d("ipm_mode", "points")
+        self.image_pts = np.array(d("ipm_image_pts",
+            [0.0, 160.0, 640.0, 160.0, 640.0, 320.0, 0.0, 320.0]), float).reshape(4, 2)
+        self.world_pts = np.array(d("ipm_world_pts",
+            [18.0, -8.0, 18.0, 8.0, 3.0, 4.0, 3.0, -4.0]), float).reshape(4, 2)
+        self.cam_xyz = (d("cam_x", 0.0), d("cam_y", 0.0), d("cam_height", 1.6))
+        self.pitch = d("cam_pitch_deg", 10.0)
+        self.yaw = d("cam_yaw_deg", 0.0)
+        self.img, self.stamp, self.K = None, 0.0, None
+        self.H, self.known = None, None
+        self._node = node
+        node.create_subscription(Image, d("image_topic", "/camera/%s/image" % name),
+                                 self._on_image, qos_profile_sensor_data)
+        node.create_subscription(CameraInfo,
+                                 d("camera_info_topic", "/camera/%s/camera_info" % name),
+                                 self._on_info, qos_profile_sensor_data)
+
+    def _on_image(self, msg):
+        if self._node._bridge is None:
+            from cv_bridge import CvBridge
+            self._node._bridge = CvBridge()
+        self.img = self._node._bridge.imgmsg_to_cv2(msg, "bgr8")
+        self.stamp = stamp_to_sec(msg.header.stamp)
+
+    def _on_info(self, msg):
+        self.K = np.array(msg.k, float).reshape(3, 3)
+
+    def ensure_homography(self):
+        if self.H is not None:
+            return True
+        if self.ipm_mode == "camera":
+            if self.K is None:
+                return False
+            self.H = bev.homography_from_extrinsics(
+                self.K, self.cam_xyz, self.pitch, self.yaw, self.grid)
+        else:
+            self.H = bev.homography_from_points(
+                self.image_pts, self.world_pts, self.grid)
+        self.known = bev.bev_known_mask(self.H, self.img.shape, self.grid)
+        return True
+
+
 class CostmapNode(Node):
     def __init__(self):
         super().__init__("perception_costmap")
 
         # ---- parameters ----
         p = self.declare_parameters("", [
-            ("image_topic", "/camera/image"),
-            ("camera_info_topic", "/camera/camera_info"),
+            ("cameras", ["front"]),
             ("lidar_topic", "/lidar/points"),
             ("costmap_topic", "/perception/costmap"),
             ("obstacle_points_topic", "/perception/obstacle_points"),
@@ -56,11 +104,6 @@ class CostmapNode(Node):
             ("twinlite_weights", ""),
             ("twinlite_config", "nano"),
             ("lidar_z_min", 0.2), ("lidar_z_max", 2.5),
-            # IPM: "points" uses image_pts/world_pts; "camera" uses K+mounting
-            ("ipm_mode", "points"),
-            ("ipm_image_pts", [0.0, 160.0, 640.0, 160.0, 640.0, 320.0, 0.0, 320.0]),
-            ("ipm_world_pts", [18.0, -8.0, 18.0, 8.0, 3.0, 4.0, 3.0, -4.0]),
-            ("cam_height", 1.6), ("cam_pitch_deg", 10.0),
             # freshness budgets (sec); with use_sim_time set, node clock and
             # CARLA stamps share the same timeline
             ("image_stale_sec", 0.5), ("lidar_stale_sec", 0.5),
@@ -79,10 +122,6 @@ class CostmapNode(Node):
         self.use_lidar = g["use_lidar"]
         self.obstacle_method = g["obstacle_method"]
         self.z_min, self.z_max = g["lidar_z_min"], g["lidar_z_max"]
-        self.ipm_mode = g["ipm_mode"]
-        self.ipm_image_pts = np.array(g["ipm_image_pts"], float).reshape(4, 2)
-        self.ipm_world_pts = np.array(g["ipm_world_pts"], float).reshape(4, 2)
-        self.cam_height, self.cam_pitch = g["cam_height"], g["cam_pitch_deg"]
         self.img_stale, self.lidar_stale = g["image_stale_sec"], g["lidar_stale_sec"]
         self.temporal_enabled = g["temporal_enabled"]
         self.obs_filter = TemporalObstacleFilter(
@@ -115,21 +154,14 @@ class CostmapNode(Node):
             self.segmenter = segmentation.create_segmenter("hsv")
 
         self._bridge = None          # cv_bridge, created lazily
-        self._latest_img = None      # bgr ndarray
         self._latest_points = None   # (N,3) ndarray
-        self._img_stamp = None       # seconds, header stamp of latest image
         self._pts_stamp = None       # seconds, header stamp of latest lidar scan
-        self._K = None               # camera intrinsics (camera mode)
-        self._H = None               # cached image->grid homography
-        self._known = None           # cached FOV footprint
+
+        self.cameras = [CameraSource(self, n, self.grid) for n in g["cameras"]]
 
         # ---- pub/sub ----
         self.costmap_pub = self.create_publisher(OccupancyGrid, g["costmap_topic"], 1)
         self.obs_pub = self.create_publisher(PointCloud2, g["obstacle_points_topic"], 1)
-        self.create_subscription(
-            Image, g["image_topic"], self._on_image, qos_profile_sensor_data)
-        self.create_subscription(
-            CameraInfo, g["camera_info_topic"], self._on_info, qos_profile_sensor_data)
         if self.use_lidar:
             self.create_subscription(
                 PointCloud2, g["lidar_topic"], self._on_lidar, qos_profile_sensor_data)
@@ -137,19 +169,9 @@ class CostmapNode(Node):
         self.create_timer(1.0 / float(g["publish_rate"]), self._tick)
         self.get_logger().info(
             f"perception_costmap up: {self.grid.width}x{self.grid.height} "
-            f"@ {self.grid.resolution} m/cell, ipm={self.ipm_mode}")
+            f"@ {self.grid.resolution} m/cell, cameras={g['cameras']}")
 
     # ---- callbacks ----
-    def _on_image(self, msg):
-        if self._bridge is None:
-            from cv_bridge import CvBridge
-            self._bridge = CvBridge()
-        self._latest_img = self._bridge.imgmsg_to_cv2(msg, "bgr8")
-        self._img_stamp = stamp_to_sec(msg.header.stamp)
-
-    def _on_info(self, msg):
-        self._K = np.array(msg.k, float).reshape(3, 3)
-
     def _on_lidar(self, msg):
         from sensor_msgs_py import point_cloud2
         pts = point_cloud2.read_points_numpy(
@@ -157,45 +179,32 @@ class CostmapNode(Node):
         self._latest_points = np.asarray(pts, float).reshape(-1, 3)
         self._pts_stamp = stamp_to_sec(msg.header.stamp)
 
-    # ---- homography (built once we have what we need) ----
-    def _ensure_homography(self, image_shape):
-        if self._H is not None:
-            return True
-        if self.ipm_mode == "camera":
-            if self._K is None:
-                return False
-            self._H = bev.homography_from_camera(
-                self._K, self.cam_height, self.cam_pitch, self.grid)
-        else:
-            self._H = bev.homography_from_points(
-                self.ipm_image_pts, self.ipm_world_pts, self.grid)
-        self._known = bev.bev_known_mask(self._H, image_shape, self.grid)
-        return True
-
     # ---- main loop ----
     def _tick(self):
         now = stamp_to_sec(self.get_clock().now().to_msg())
         empty = np.zeros((self.grid.height, self.grid.width), bool)
-        road_bev = empty
+        road_bev = empty.copy()
         obst_grid = empty.copy()
-        known = None
+        known = np.zeros((self.grid.height, self.grid.width), bool)
+        saw_camera = False
 
-        img_fresh = (
-            self._latest_img is not None
-            and is_fresh(self._img_stamp, now, self.img_stale)
-        )
-        if img_fresh and self._ensure_homography(self._latest_img.shape):
-            road = self.segmenter(self._latest_img)
-            road_bev = bev.warp_to_bev(road.astype(np.uint8) * 255, self._H, self.grid) > 127
-            known = self._known
+        for cam in self.cameras:
+            if cam.img is None or not is_fresh(cam.stamp, now, self.img_stale):
+                continue
+            if not cam.ensure_homography():
+                continue
+            saw_camera = True
+            road = self.segmenter(cam.img)
+            road_bev |= bev.warp_to_bev(road.astype(np.uint8) * 255, cam.H, self.grid) > 127
+            known |= cam.known
             if self.use_cam_obs:
-                obs_img = np.zeros(self._latest_img.shape[:2], bool)
+                obs_img = np.zeros(cam.img.shape[:2], bool)
                 if self.obstacle_method in ("classical", "both") or self.yolo is None:
-                    obs_img |= obstacles.detect_obstacles_camera(self._latest_img, road)
+                    obs_img |= obstacles.detect_obstacles_camera(cam.img, road)
                 if self.yolo is not None:
-                    obs_img |= self.yolo.detect(self._latest_img)
+                    obs_img |= self.yolo.detect(cam.img)
                 obst_grid |= bev.warp_to_bev(
-                    obs_img.astype(np.uint8) * 255, self._H, self.grid) > 127
+                    obs_img.astype(np.uint8) * 255, cam.H, self.grid) > 127
 
         lidar_fresh = (
             self._latest_points is not None
@@ -208,17 +217,17 @@ class CostmapNode(Node):
             self._publish_obstacle_points(pts)
 
         # a 360° lidar observes the whole grid, so a fresh lidar frame this
-        # tick means "observed" is everything; otherwise it's the camera FOV
+        # tick means "observed" is everything; otherwise it's the union of
+        # camera FOVs
         lidar_active = (self.use_lidar and self._latest_points is not None
                         and is_fresh(self._pts_stamp, now, self.lidar_stale))
-        observed = (known if known is not None
-                    else np.zeros((self.grid.height, self.grid.width), bool))
+        observed = known
         if lidar_active:
             observed = np.ones_like(observed)
         if self.temporal_enabled:
             obst_grid = self.obs_filter.update(obst_grid, observed)
 
-        if known is None:                       # nothing seen yet
+        if not saw_camera and not lidar_active:  # nothing seen yet
             return
 
         cost = build_cost_array(self.grid, road_bev, obst_grid, known_mask=known)

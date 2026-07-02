@@ -121,3 +121,25 @@ def test_points_just_below_grid_min_are_dropped():
                     [0.0, -10.05, 1.0]])   # just right of the right edge
     m = points_to_grid_mask(pts, g)
     assert not m.any()
+
+
+from perception_costmap.bev import homography_from_extrinsics
+
+
+def _px_to_world(H, u, v, grid):
+    p = H @ np.array([u, v, 1.0])
+    col, row = p[0] / p[2], p[1] / p[2]
+    return (grid.x_min + col * grid.resolution,
+            grid.y_min + row * grid.resolution)
+
+
+def test_yawed_camera_rotates_ground_points():
+    g = GridSpec(x_min=-20, x_max=20, y_min=-20, y_max=20, resolution=0.1)
+    K = np.array([[300.0, 0, 320], [0, 300.0, 180], [0, 0, 1]])
+    H_fwd = homography_from_extrinsics(K, (0, 0, 1.6), 10.0, 0.0, g)
+    H_left = homography_from_extrinsics(K, (0, 0, 1.6), 10.0, 90.0, g)
+    u, v = 320.0, 260.0                     # a pixel below the horizon
+    xf, yf = _px_to_world(H_fwd, u, v, g)
+    xl, yl = _px_to_world(H_left, u, v, g)
+    # rotating the camera +90 deg (left) maps (x, y) -> (-y, x)
+    assert abs(xl - (-yf)) < 0.05 and abs(yl - xf) < 0.05

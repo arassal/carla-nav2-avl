@@ -1,8 +1,7 @@
 perception_costmap:
   ros__parameters:
-    # --- input topics (remap these to your CARLA / real sensor topics) ---
-    image_topic: /camera/image
-    camera_info_topic: /camera/camera_info
+    # --- input topics (remap lidar_topic; camera topics come from the
+    # per-camera blocks below) ---
     lidar_topic: /lidar/points
 
     # --- output topics (consumed by Nav2) ---
@@ -40,16 +39,23 @@ perception_costmap:
     lidar_z_min: 0.2              # drop ground returns below this height
     lidar_z_max: 2.5             # drop returns above the roofline
 
-    # --- inverse-perspective mapping ---
-    # "points": 4 image pixels + their ground positions (calibrate per camera).
-    # "camera": derive from camera_info K + mounting below.
-    ipm_mode: points
-    # [u1,v1, u2,v2, u3,v3, u4,v4]
-    ipm_image_pts: [0.0, 160.0, 640.0, 160.0, 640.0, 320.0, 0.0, 320.0]
-    # [x1,y1, x2,y2, x3,y3, x4,y4]  (metres, x fwd / y left)
-    ipm_world_pts: [18.0, -8.0, 18.0, 8.0, 3.0, 4.0, 3.0, -4.0]
-    cam_height: 1.6
-    cam_pitch_deg: 10.0
+    # --- cameras: multi-camera BEV fusion ---
+    # each name below gets a nested parameter block. "points": 4 image pixels
+    # + their ground positions (calibrate per camera). "camera": derive from
+    # camera_info K + mounting (cam_x/y/height/pitch/yaw).
+    cameras: ["front"]           # real car: ["front", "left", "right"]
+    front:
+      image_topic: /camera/front/image
+      camera_info_topic: /camera/front/camera_info
+      ipm_mode: points           # points | camera
+      ipm_image_pts: [0.0, 160.0, 640.0, 160.0, 640.0, 320.0, 0.0, 320.0]
+      ipm_world_pts: [18.0, -8.0, 18.0, 8.0, 3.0, 4.0, 3.0, -4.0]
+      cam_x: 0.0
+      cam_y: 0.0
+      cam_height: 1.6
+      cam_pitch_deg: 10.0
+      cam_yaw_deg: 0.0
+    # left/right blocks: same keys, yaw +90 / -90, calibrated per camera
 
     # --- freshness ---
     # drop stale sensor data instead of building a costmap from a frozen

@@ -53,6 +53,34 @@ def homography_from_points(image_pts, world_pts, grid: GridSpec) -> np.ndarray:
     return cv2.getPerspectiveTransform(image_pts, grid_pts)
 
 
+def homography_from_extrinsics(K, cam_xyz, pitch_deg, yaw_deg, grid: GridSpec) -> np.ndarray:
+    """
+    Ground-plane homography for a camera mounted at cam_xyz (robot frame,
+    metres), pitched down pitch_deg and yawed yaw_deg (CCW, +left; 0 = facing
+    +x). This is homography_from_camera generalised for side/rear cameras.
+    """
+    K = np.asarray(K, dtype=np.float64).reshape(3, 3)
+    th = np.radians(pitch_deg)
+    yw = np.radians(yaw_deg)
+
+    R0 = np.array([[0.0, -1.0, 0.0],
+                   [0.0, 0.0, -1.0],
+                   [1.0, 0.0, 0.0]])
+    Rx = np.array([[1.0, 0.0, 0.0],
+                   [0.0, np.cos(th), -np.sin(th)],
+                   [0.0, np.sin(th), np.cos(th)]])
+    Rz_inv = np.array([[np.cos(yw), np.sin(yw), 0.0],     # world -> cam-heading
+                       [-np.sin(yw), np.cos(yw), 0.0],
+                       [0.0, 0.0, 1.0]])
+    R = Rx @ R0 @ Rz_inv
+
+    C = np.asarray(cam_xyz, dtype=np.float64)
+    t = -R @ C
+    H_world2img = K @ np.column_stack((R[:, 0], R[:, 1], t))
+    H_img2world = np.linalg.inv(H_world2img)
+    return _world_to_grid_affine(grid) @ H_img2world
+
+
 def homography_from_camera(K, cam_height, pitch_deg, grid: GridSpec) -> np.ndarray:
     """
     Analytic ground-plane homography from intrinsics + mounting.
@@ -64,32 +92,7 @@ def homography_from_camera(K, cam_height, pitch_deg, grid: GridSpec) -> np.ndarr
     y down, z forward. NOTE: verify the sign/þitch convention against your
     actual camera_info before relying on this in the field.
     """
-    K = np.asarray(K, dtype=np.float64).reshape(3, 3)
-    theta = np.radians(pitch_deg)
-
-    # Base world->camera rotation (no pitch): cam looks along +x world.
-    R0 = np.array([
-        [0.0, -1.0, 0.0],   # cam x (right) = -world y
-        [0.0, 0.0, -1.0],   # cam y (down)  = -world z
-        [1.0, 0.0, 0.0],    # cam z (fwd)   =  world x
-    ], dtype=np.float64)
-    # Pitch down about the camera's x (right) axis.
-    Rx = np.array([
-        [1.0, 0.0, 0.0],
-        [0.0, np.cos(theta), -np.sin(theta)],
-        [0.0, np.sin(theta), np.cos(theta)],
-    ], dtype=np.float64)
-    R = Rx @ R0
-
-    C = np.array([0.0, 0.0, cam_height])      # camera centre in world
-    t = -R @ C
-
-    # Ground plane z=0: world->image homography uses columns r1, r2, t.
-    H_world2img = K @ np.column_stack((R[:, 0], R[:, 1], t))
-    H_img2world = np.linalg.inv(H_world2img)
-
-    A = _world_to_grid_affine(grid)
-    return A @ H_img2world
+    return homography_from_extrinsics(K, (0.0, 0.0, cam_height), pitch_deg, 0.0, grid)
 
 
 def warp_to_bev(image, H, grid: GridSpec, interp=cv2.INTER_NEAREST):
