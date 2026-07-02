@@ -86,7 +86,8 @@ def filter_obstacle_points(points_xyz: np.ndarray,
 
 def points_to_grid_mask(points_xyz: np.ndarray, grid: GridSpec) -> np.ndarray:
     """Bin metric obstacle points into a grid-space boolean obstacle mask.
-    Vectorized: floor to cell indices, keep in-bounds, scatter."""
+    Vectorized: floor to cell indices, keep in-bounds, scatter.
+    Uses floor (not int truncation), so points just below x_min/y_min are dropped rather than binned into border cells."""
     mask = np.zeros((grid.height, grid.width), dtype=bool)
     if points_xyz.size == 0:
         return mask

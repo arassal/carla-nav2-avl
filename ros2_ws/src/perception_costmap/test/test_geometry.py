@@ -111,3 +111,13 @@ def test_points_to_grid_mask_empty():
     g = GridSpec(x_min=0, x_max=2, y_min=0, y_max=2, resolution=1.0)
     m = points_to_grid_mask(np.zeros((0, 3)), g)
     assert m.shape == (2, 2) and not m.any()
+
+
+def test_points_just_below_grid_min_are_dropped():
+    # the old world_to_cell-based loop truncated toward zero, wrongly binning
+    # points in (min - resolution, min) into border cells; floor drops them
+    g = GridSpec(x_min=-4.0, x_max=16.0, y_min=-10.0, y_max=10.0, resolution=0.1)
+    pts = np.array([[-4.05, 0.0, 1.0],     # just behind the rear edge
+                    [0.0, -10.05, 1.0]])   # just right of the right edge
+    m = points_to_grid_mask(pts, g)
+    assert not m.any()
