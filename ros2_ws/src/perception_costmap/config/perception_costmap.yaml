@@ -43,3 +43,11 @@ perception_costmap:
     # the same timeline
     image_stale_sec: 0.5
     lidar_stale_sec: 0.5
+
+    # --- temporal obstacle confidence filter ---
+    # per-cell conf accumulates by temporal_hit on detection and decays by
+    # temporal_miss when observed-empty; reported lethal at >= threshold
+    temporal_hit: 0.4
+    temporal_miss: 0.2
+    temporal_threshold: 0.5
+    temporal_enabled: true

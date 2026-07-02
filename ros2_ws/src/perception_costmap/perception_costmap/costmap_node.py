@@ -24,6 +24,7 @@ from nav_msgs.msg import OccupancyGrid
 from .occupancy import GridSpec, build_cost_array, to_occupancy_grid_msg
 from . import segmentation, obstacles, bev
 from .util import stamp_to_sec, is_fresh
+from .temporal import TemporalObstacleFilter
 
 
 class CostmapNode(Node):
@@ -54,6 +55,9 @@ class CostmapNode(Node):
             # freshness budgets (sec); with use_sim_time set, node clock and
             # CARLA stamps share the same timeline
             ("image_stale_sec", 0.5), ("lidar_stale_sec", 0.5),
+            # temporal obstacle confidence filter
+            ("temporal_hit", 0.4), ("temporal_miss", 0.2),
+            ("temporal_threshold", 0.5), ("temporal_enabled", True),
         ])
         g = {k.name: k.value for k in p}
 
@@ -71,6 +75,12 @@ class CostmapNode(Node):
         self.ipm_world_pts = np.array(g["ipm_world_pts"], float).reshape(4, 2)
         self.cam_height, self.cam_pitch = g["cam_height"], g["cam_pitch_deg"]
         self.img_stale, self.lidar_stale = g["image_stale_sec"], g["lidar_stale_sec"]
+        self.temporal_enabled = g["temporal_enabled"]
+        self.obs_filter = TemporalObstacleFilter(
+            (self.grid.height, self.grid.width),
+            hit=g["temporal_hit"], miss=g["temporal_miss"],
+            threshold=g["temporal_threshold"],
+        )
 
         self._bridge = None          # cv_bridge, created lazily
         self._latest_img = None      # bgr ndarray
@@ -160,6 +170,17 @@ class CostmapNode(Node):
                 self._latest_points, self.z_min, self.z_max)
             obst_grid |= obstacles.points_to_grid_mask(pts, self.grid)
             self._publish_obstacle_points(pts)
+
+        # a 360° lidar observes the whole grid, so a fresh lidar frame this
+        # tick means "observed" is everything; otherwise it's the camera FOV
+        lidar_active = (self.use_lidar and self._latest_points is not None
+                        and is_fresh(self._pts_stamp, now, self.lidar_stale))
+        observed = (known if known is not None
+                    else np.zeros((self.grid.height, self.grid.width), bool))
+        if lidar_active:
+            observed = np.ones_like(observed)
+        if self.temporal_enabled:
+            obst_grid = self.obs_filter.update(obst_grid, observed)
 
         if known is None:                       # nothing seen yet
             return
