@@ -97,10 +97,9 @@ class CostmapNode(Node):
                     weights=g["yolo_weights"], conf=g["yolo_conf"],
                     footprint_frac=g["yolo_footprint_frac"])
                 self.get_logger().info("YOLO obstacle detector loaded: %s" % g["yolo_weights"])
-            except ImportError:
+            except Exception as e:
                 self.get_logger().warn(
-                    "obstacle_method=%s but ultralytics not installed; "
-                    "falling back to classical" % g["obstacle_method"])
+                    "YOLO unavailable (%s); falling back to classical" % e)
 
         self._bridge = None          # cv_bridge, created lazily
         self._latest_img = None      # bgr ndarray
