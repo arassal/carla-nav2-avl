@@ -1,0 +1,113 @@
+ZED X COSTMAP PROCESS — SUMMARY
+(exported from Claude Code project memory, source session dated ~9 days ago; a few fields updated
+from a later dinosaur-Jetson bring-up session dated ~4 days ago — see notes marked "UPDATED")
+
+WORKSPACE
+- Location: ~/zed_costmap_ws
+- Purpose: Real-camera version of a CARLA costmap simulation. Three ZED X stereo cameras feed
+  YOLO pedestrian detection into a dual-inflation occupancy costmap.
+
+HARDWARE REQUIREMENTS
+- ZED X cameras use GMSL2 (NOT USB). Requires one of:
+  - NVIDIA Jetson AGX Orin + Stereolabs GMSL2 expansion board
+  - Stereolabs ZED Box (Jetson Orin NX, GMSL2 ports built in)
+- ZED SDK 4.2.5 must be installed on the Jetson (JetPack installer, goes to /usr/local/zed)
+- Dev build machine is x86_64 Ubuntu 24.04 — must be rebuilt separately on the Jetson
+  (ARM64, Ubuntu 22.04)
+
+WORKSPACE PACKAGES
+- zed_msgs               (zed-ros2-interfaces @ 4.2.5) — ZED message types
+- zed_components /
+  zed_wrapper / zed_ros2  — ZED ROS2 wrapper (humble-v4.2.5 tag, patched for Jazzy)
+- zed_bridge              — custom node: depth + RGB -> /scan + /ped_scan
+- zed_bringup             — launch file + RViz config
+
+PIPELINE SUMMARY
+
+  ZED X front/left/right (GMSL2)
+          |  depth image + RGB image
+          v
+  [zed_bridge_node]
+    - YOLO (yolov8n) detects pedestrians in RGB
+    - Back-projects depth pixels -> 3D base_link points
+    - Height filter: 0.5m-2.5m (removes ground & sky)
+    - Bins by horizontal angle -> LaserScan ring
+    - Pedestrian points -> /ped_scan
+    - Other obstacles   -> /scan
+          |
+          v
+  [costmap_node]
+    - /scan     -> 2.0m inflation radius
+    - /ped_scan -> 5.0m inflation radius
+    - Merge layers (np.maximum), gradient cost 0->99
+    - /local_costmap/costmap  (40m x 40m, 0.25m/cell, 5Hz)
+    - /global_costmap/costmap (150m x 150m, 0.5m/cell, 1Hz, slow decay)
+
+KEY PATCHES APPLIED TO zed-ros2-wrapper
+- Checked out tag humble-v4.2.5 (matches SDK 4.2.5; master targets SDK 5.x)
+- Added "#elif defined FOUND_JAZZY" to the distro guard in zed_camera_component.cpp (~line 36)
+- cob_srvs installed via: pkexec apt install ros-jazzy-cob-srvs
+- Dev build cmake flags:
+    -DZED_DIR=$HOME/zed_sdk_installer
+    -DCUDA_TOOLKIT_ROOT_DIR=$HOME/miniconda3/targets/x86_64-linux
+
+BUILD COMMAND (dev machine, x86_64)
+
+  export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+  source /opt/ros/jazzy/setup.bash
+  cd ~/zed_costmap_ws
+  colcon build \
+    --cmake-args \
+      "-DZED_DIR=$HOME/zed_sdk_installer" \
+      "-DCMAKE_PREFIX_PATH=$HOME/zed_sdk_installer;$HOME/miniconda3/targets/x86_64-linux;/opt/ros/jazzy" \
+      "-DCUDA_TOOLKIT_ROOT_DIR=$HOME/miniconda3/targets/x86_64-linux" \
+      "-DCUDAToolkit_ROOT=$HOME/miniconda3/targets/x86_64-linux" \
+      "-DPYTHON_EXECUTABLE=/usr/bin/python3.12" \
+      "-DPython3_EXECUTABLE=/usr/bin/python3.12"
+
+STARTUP (on Jetson via SSH, use tmux — one pane per command)
+
+  source ~/zed_costmap_ws/install/setup.bash
+
+  # One per camera (three terminals/panes)
+  ros2 launch zed_wrapper zed_camera.launch.py camera_name:=zed_front camera_model:=zedx
+  ros2 launch zed_wrapper zed_camera.launch.py camera_name:=zed_left  camera_model:=zedx
+  ros2 launch zed_wrapper zed_camera.launch.py camera_name:=zed_right camera_model:=zedx
+
+  # Costmap + RViz
+  ros2 launch zed_bringup zed_costmap.launch.py
+
+REMOTE MONITORING (laptop on same network)
+
+  export ROS_DOMAIN_ID=0   # must match Jetson
+  source /opt/ros/humble/setup.bash
+  rviz2
+
+CAMERA TF POSITIONS
+File: ~/zed_costmap_ws/src/zed_bringup/launch/zed_costmap.launch.py
+
+Original placeholders (from zed_costmap_ws memory, unmeasured):
+  - Front: 2.0m fwd, 0.0m lat, 1.2m up
+  - Left:  0.5m fwd, 0.9m left, 1.2m up
+  - Right: 0.5m fwd, 0.9m right, 1.2m up
+
+UPDATED — actual measured mounts from later avros.urdf.xacro on the real vehicle
+(dinosaur/IGVC bring-up, per-camera GMSL2 serials, yaw in vehicle frame):
+  - Front: SN 42569280, x=0.6795 z=0.4476, pitch 15 deg
+  - Left:  SN 49910017, x=0.098 y=+0.286 z=0.6126, pitch 0, yaw +90 deg
+  - Right: SN 43779087, x=0.098 y=-0.286 z=0.6126, pitch 0, yaw -90 deg
+  - Velodyne z=0.715 -> costmap lidar z-band -0.5..1.8 (sensor frame)
+
+Why this matters: TF positions directly affect where obstacles appear on the costmap.
+Wrong values = wrong costmap. The wrappers will hang on "Waiting for valid static
+transformations" until sensors.launch.py (robot_state_publisher + velodyne + xsens) is running.
+
+KEY BUG FIXED
+- costmap_node.py _scan_to_odom() was hardcoded to look up TF for frame 'lidar' (a CARLA
+  leftover). Fixed to use msg.header.frame_id instead (which is 'base_link' coming from the
+  ZED bridge).
+
+NOTE ON FRESHNESS
+This is a point-in-time snapshot pulled from project memory, not a live read of the repo.
+Verify file paths, line numbers, and exact values against the current codebase before treating
+them as ground truth.
