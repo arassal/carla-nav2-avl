@@ -1,0 +1,81 @@
+# Nav2 Jazzy: node name = 'local_costmap', namespace = 'local_costmap'
+# → params live under local_costmap.local_costmap.ros__parameters
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      update_frequency: 10.0
+      publish_frequency: 5.0
+      global_frame: odom
+      robot_base_frame: base_link
+      use_sim_time: false
+      rolling_window: true
+      width: 40
+      height: 40
+      resolution: 0.25
+      robot_radius: 2.5
+      always_send_full_costmap: true
+      transform_tolerance: 1.0
+      plugins: ["obstacle_layer", "inflation_layer"]
+
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        observation_sources: lidar_scan
+        lidar_scan:
+          topic: /scan
+          sensor_frame: lidar
+          data_type: LaserScan
+          max_obstacle_height: 3.0
+          min_obstacle_height: -0.5
+          obstacle_max_range: 35.0
+          obstacle_min_range: 0.5
+          raytrace_max_range: 38.0
+          raytrace_min_range: 0.0
+          clearing: true
+          marking: true
+
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 2.5
+        inflation_radius: 4.0
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      update_frequency: 2.0
+      publish_frequency: 1.0
+      global_frame: map
+      robot_base_frame: base_link
+      use_sim_time: false
+      rolling_window: true
+      width: 150
+      height: 150
+      resolution: 0.5
+      robot_radius: 2.5
+      track_unknown_space: true
+      always_send_full_costmap: true
+      transform_tolerance: 1.0
+      plugins: ["obstacle_layer", "inflation_layer"]
+
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        observation_sources: lidar_scan
+        lidar_scan:
+          topic: /scan
+          sensor_frame: lidar
+          data_type: LaserScan
+          max_obstacle_height: 3.0
+          min_obstacle_height: -0.5
+          obstacle_max_range: 50.0
+          obstacle_min_range: 0.5
+          raytrace_max_range: 55.0
+          raytrace_min_range: 0.0
+          clearing: true
+          marking: true
+
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 1.5
+        inflation_radius: 5.0

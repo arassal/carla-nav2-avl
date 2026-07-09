@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>zed_bridge</name>
+  <version>1.0.0</version>
+  <description>CARLA to ROS2 bridge publishing scan, odom, tf, and path</description>
+  <maintainer email="user@local">user</maintainer>
+  <license>MIT</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>tf2_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
