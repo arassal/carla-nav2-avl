@@ -119,6 +119,15 @@ class CostmapNode(Node):
             # temporal obstacle confidence filter
             ("temporal_hit", 0.4), ("temporal_miss", 0.2),
             ("temporal_threshold", 0.5), ("temporal_enabled", True),
+            # cost shape: off-road (observed, no obstacle) vs. true obstacle,
+            # plus a distance-decay halo around obstacles so the costmap
+            # isn't just a flat lethal/free binary. See occupancy.py.
+            ("offroad_cost", 65),
+            ("inflation_radius", 0.8),
+            ("cost_scaling_factor", 4.0),
+            # -1 = ROS unknown; small positive = blind spots traversable
+            # with a mild penalty (see occupancy.build_cost_array)
+            ("unknown_cost", -1),
         ])
         g = {k.name: k.value for k in p}
 
@@ -133,6 +142,10 @@ class CostmapNode(Node):
         self.z_min, self.z_max = g["lidar_z_min"], g["lidar_z_max"]
         self.img_stale, self.lidar_stale = g["image_stale_sec"], g["lidar_stale_sec"]
         self.temporal_enabled = g["temporal_enabled"]
+        self.offroad_cost = g["offroad_cost"]
+        self.inflation_radius = g["inflation_radius"]
+        self.cost_scaling_factor = g["cost_scaling_factor"]
+        self.unknown_cost = g["unknown_cost"]
         self.obs_filter = TemporalObstacleFilter(
             (self.grid.height, self.grid.width),
             hit=g["temporal_hit"], miss=g["temporal_miss"],
@@ -266,7 +279,12 @@ class CostmapNode(Node):
         if not saw_camera and not lidar_active:  # nothing seen yet
             return
 
-        cost = build_cost_array(self.grid, road_bev, obst_grid, known_mask=known)
+        cost = build_cost_array(
+            self.grid, road_bev, obst_grid, known_mask=known,
+            offroad_cost=self.offroad_cost,
+            inflation_radius=self.inflation_radius,
+            cost_scaling_factor=self.cost_scaling_factor,
+            unknown_cost=self.unknown_cost)
         msg = to_occupancy_grid_msg(cost, self.grid, stamp=self.get_clock().now().to_msg())
         self.costmap_pub.publish(msg)
 

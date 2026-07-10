@@ -156,3 +156,44 @@ def test_draw_grid_overlay_changes_pixels_and_preserves_input():
     assert out.shape == img.shape
     assert out.any()                 # lines were drawn
     assert not img.any()             # input untouched
+
+
+def test_unknown_cost_makes_blind_cells_traversable():
+    """unknown_cost > 0: blind cells get the mild penalty, not -1."""
+    g = GridSpec(x_min=0, x_max=2, y_min=0, y_max=2, resolution=1.0)  # 2x2
+    road = np.zeros((2, 2), bool)
+    obst = np.zeros((2, 2), bool)
+    known = np.zeros((2, 2), bool)
+    known[0, 0] = True
+    known[0, 1] = True
+    road[0, 0] = True
+    cost = build_cost_array(g, road, obst, known_mask=known, unknown_cost=25)
+    assert cost[0, 0] == FREE          # observed road
+    assert cost[1, 1] == 25            # blind -> traversable w/ penalty
+    assert cost[0, 1] == 65            # observed off-road default
+
+
+def test_unknown_cost_default_keeps_ros_unknown():
+    g = GridSpec(x_min=0, x_max=2, y_min=0, y_max=2, resolution=1.0)
+    empty = np.zeros((2, 2), bool)
+    known = np.zeros((2, 2), bool)
+    cost = build_cost_array(g, empty, empty, known_mask=known)
+    assert (cost == UNKNOWN).all()
+
+
+def test_obstacle_inflation_bleeds_into_blind_cells():
+    """A blind cell adjacent to a detected obstacle must cost MORE than the
+    plain unknown penalty -- the 'safe unless obstacles nearby' rule."""
+    g = GridSpec(x_min=0, x_max=10, y_min=-5, y_max=5, resolution=0.1)
+    shape = (g.height, g.width)
+    road = np.zeros(shape, bool)
+    obst = np.zeros(shape, bool)
+    known = np.zeros(shape, bool)   # everything blind
+    obst[50, 50] = True             # except one detected obstacle
+    cost = build_cost_array(g, road, obst, known_mask=known,
+                            unknown_cost=25, inflation_radius=0.8,
+                            cost_scaling_factor=4.0)
+    assert cost[50, 50] == LETHAL
+    assert cost[50, 52] > 25        # blind cell 0.2m away: inflated
+    assert cost[50, 51] > cost[50, 53]   # decays with distance
+    assert cost[50, 90] == 25       # far blind cell: plain penalty

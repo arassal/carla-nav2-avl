@@ -21,7 +21,7 @@ perception_costmap:
 
     segmentation_method: twinlitenet
     use_camera_obstacles: true
-    use_lidar: true
+    use_lidar: false
     obstacle_method: yolo
     yolo_weights: /home/dinosaur/models/yolov8n.engine
     yolo_conf: 0.35
@@ -53,7 +53,7 @@ perception_costmap:
       cam_x: 0.6795
       cam_y: 0.0
       cam_height: 0.4476          # xsens_height 0.5556 - 0.108
-      cam_pitch_deg: 15.0
+      cam_pitch_deg: 17.0     # person-walk calib 2026-07-09 (was 15)
       cam_yaw_deg: 0.0
     left:
       image_topic: /zed_left/zed_node/rgb/color/rect/image
@@ -62,8 +62,8 @@ perception_costmap:
       cam_x: 0.098
       cam_y: 0.286
       cam_height: 0.6126          # xsens_height + 0.057
-      cam_pitch_deg: 0.0          # URDF: rpy="0 0 1.5708" (no tilt)
-      cam_yaw_deg: 90.0
+      cam_pitch_deg: 18.0    # person-walk + brick-VP calib 2026-07-09
+      cam_yaw_deg: 94.0    # person-walk calib 2026-07-09
     right:
       image_topic: /zed_right/zed_node/rgb/color/rect/image
       camera_info_topic: /zed_right/zed_node/rgb/color/rect/camera_info
@@ -71,8 +71,8 @@ perception_costmap:
       cam_x: 0.098
       cam_y: -0.286
       cam_height: 0.6126
-      cam_pitch_deg: 0.0          # URDF: rpy="0 0 -1.5708" (no tilt)
-      cam_yaw_deg: -90.0
+      cam_pitch_deg: 20.0    # person-walk + brick-VP calib 2026-07-09
+      cam_yaw_deg: -86.0    # person-walk calib 2026-07-09
 
     image_stale_sec: 0.5
     lidar_stale_sec: 0.5
@@ -81,3 +81,13 @@ perception_costmap:
     temporal_miss: 0.2
     temporal_threshold: 0.5
     temporal_enabled: true
+
+    # cost shape: off-road (observed, no obstacle) vs. true lethal obstacle,
+    # plus a distance-decay halo around obstacles (see occupancy.py).
+    offroad_cost: 65
+    inflation_radius: 0.8
+    cost_scaling_factor: 4.0
+    # blind spots are traversable with a mild penalty instead of ROS -1
+    # (operator decision 2026-07-09: assume safe unless obstacles nearby --
+    # obstacle inflation still bleeds into blind cells regardless)
+    unknown_cost: 25

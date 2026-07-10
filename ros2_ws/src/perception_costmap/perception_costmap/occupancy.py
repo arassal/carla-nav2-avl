@@ -17,15 +17,28 @@ Conventions
 - Cost values follow the ROS convention:
       -1  unknown (not observed yet)
        0  free / drivable road
-     100  lethal (obstacle, or off-road if off-road is treated as lethal)
+     100  lethal (a detected obstacle, or the inflation core at distance 0)
+  Between FREE and LETHAL, cells near an obstacle carry an intermediate cost
+  that decays with distance (see ``inflate_costs``), and off-road-but-no-
+  obstacle cells carry a separate, tunable ``offroad_cost`` -- distinct from
+  LETHAL so a planner can tell "don't leave the lane" from "something is
+  actually there."
 """
 
 from dataclasses import dataclass
 import numpy as np
+import cv2
 
 UNKNOWN = -1
 FREE = 0
 LETHAL = 100
+# Off-road (observed, not drivable, no confirmed obstacle) used to collapse
+# into LETHAL by default, which made every non-road pixel look identical to
+# a real obstacle in rviz. Distinct default so the two are visually and
+# numerically different -- still high enough to be avoided.
+DEFAULT_OFFROAD_COST = 65
+DEFAULT_INFLATION_RADIUS = 0.8   # metres
+DEFAULT_COST_SCALING_FACTOR = 4.0
 
 
 @dataclass(frozen=True)
@@ -61,19 +74,72 @@ class GridSpec:
         return x, y
 
 
+def inflate_costs(obstacle_mask: np.ndarray, resolution: float,
+                  inflation_radius: float = DEFAULT_INFLATION_RADIUS,
+                  cost_scaling_factor: float = DEFAULT_COST_SCALING_FACTOR,
+                  lethal: int = LETHAL) -> np.ndarray:
+    """
+    Nav2-style exponential-decay halo around obstacle cells:
+
+        cost(d) = lethal * exp(-cost_scaling_factor * d)   for 0 <= d <= inflation_radius
+        cost(d) = NO_INFLUENCE                              for d > inflation_radius
+
+    ``d`` is the Euclidean distance in metres from the nearest True cell in
+    ``obstacle_mask``, computed with ``cv2.distanceTransform`` (fast, no
+    scipy dependency -- this module stays torch/scipy-free by design).
+
+    Returns a float array the same shape as ``obstacle_mask``. Cells beyond
+    ``inflation_radius`` (or when there are no obstacles at all) get -1.0,
+    a sentinel that is a no-op under ``np.maximum`` against any real cost
+    (including UNKNOWN, also -1) -- callers combine with
+    ``np.maximum(existing_cost, inflated)``.
+    """
+    shape = obstacle_mask.shape
+    if not obstacle_mask.any():
+        return np.full(shape, -1.0, dtype=np.float64)
+
+    # distanceTransform wants uint8 with 0 = feature point (the obstacle);
+    # everything else is measured as distance-to-nearest-zero.
+    not_obstacle = (~obstacle_mask.astype(bool)).astype(np.uint8)
+    dist_px = cv2.distanceTransform(not_obstacle, cv2.DIST_L2, 5)
+    dist_m = dist_px * resolution
+
+    decay = lethal * np.exp(-cost_scaling_factor * dist_m)
+    decay[dist_m > inflation_radius] = -1.0
+    decay[obstacle_mask.astype(bool)] = float(lethal)
+    return decay
+
+
 def build_cost_array(grid: GridSpec,
                      road_mask: np.ndarray,
                      obstacle_mask: np.ndarray,
                      known_mask: np.ndarray = None,
-                     offroad_cost: int = LETHAL) -> np.ndarray:
+                     offroad_cost: int = DEFAULT_OFFROAD_COST,
+                     inflation_radius: float = DEFAULT_INFLATION_RADIUS,
+                     cost_scaling_factor: float = DEFAULT_COST_SCALING_FACTOR,
+                     unknown_cost: int = UNKNOWN) -> np.ndarray:
     """
     Fuse grid-space boolean masks into an int8 cost array (height, width).
 
-    Priority (low -> high): unknown < off-road < road < obstacle.
-      - cells not in ``known_mask``      -> UNKNOWN (-1)
-      - known cells                      -> ``offroad_cost`` (default lethal)
+    Base layer (low -> high): unknown < off-road < road < obstacle.
+      - cells not in ``known_mask``      -> ``unknown_cost`` (default -1)
+      - known cells                      -> ``offroad_cost``
       - road cells (within known)        -> FREE (0)
       - obstacle cells                   -> LETHAL (100)
+
+    ``unknown_cost``: -1 keeps ROS "unknown" semantics (planner decides).
+    A small positive value (e.g. 25) makes blind spots *traversable with a
+    mild penalty* -- the planner prefers observed-free ground but may cross
+    a camera blind wedge. Obstacle inflation still bleeds into blind cells
+    (see below), so blind ground next to a detected obstacle stays expensive.
+
+    Then an inflation halo is applied around obstacle cells (see
+    ``inflate_costs``): any cell within ``inflation_radius`` of an obstacle
+    gets at least the decayed cost, even if it was UNKNOWN or FREE -- a real
+    obstacle's danger zone isn't gated on camera visibility elsewhere.
+    Obstacle cells themselves are always pinned back to exact LETHAL after
+    inflation, since the float decay only reaches ~lethal at d=0 by
+    approximation, not exactly.
 
     Road is clipped to ``known_mask``: a "road" pixel outside the observed
     footprint (e.g. a mirror-projected sky pixel from a side camera) must
@@ -91,11 +157,16 @@ def build_cost_array(grid: GridSpec,
     if known_mask is None:
         known_mask = np.ones(shape, dtype=bool)
 
-    cost = np.full(shape, UNKNOWN, dtype=np.int8)
-    cost[known_mask] = np.int8(offroad_cost)   # observed but not road -> off-road
+    cost = np.full(shape, float(unknown_cost), dtype=np.float64)
+    cost[known_mask] = float(offroad_cost)      # observed but not road -> off-road
     cost[road_mask.astype(bool) & known_mask] = FREE   # road overrides off-road
-    cost[obstacle_mask.astype(bool)] = LETHAL  # obstacle overrides everything
-    return cost
+
+    inflated = inflate_costs(obstacle_mask, grid.resolution,
+                             inflation_radius, cost_scaling_factor)
+    cost = np.maximum(cost, inflated)           # halo only ever raises cost
+    cost[obstacle_mask.astype(bool)] = LETHAL   # obstacle cells: exact lethal
+
+    return cost.astype(np.int8)
 
 
 def to_occupancy_grid_msg(cost: np.ndarray, grid: GridSpec, stamp=None,
