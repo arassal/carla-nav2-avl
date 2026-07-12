@@ -1,0 +1,29 @@
+# Provisional transforms transcribed from the supplied sketch on 2026-07-12.
+# REP-103: base_link x forward, y left, z up; translations are meters.
+# Sketch used left-negative y, so signs below preserve the sketch rather than REP-103.
+# Confirm axis convention, all rotations, and the forward camera z sign physically.
+camera_mounts:
+  left:
+    parent_frame: xsens_link
+    child_frame: zed_left_camera_link
+    translation_m: [0.098425, -0.285750, 0.057150]
+    nominal_rpy_rad: [0.0, 0.0, 1.570796327]
+    confidence: provisional
+  right:
+    parent_frame: xsens_link
+    child_frame: zed_right_camera_link
+    translation_m: [0.098425, 0.285750, 0.057150]
+    nominal_rpy_rad: [0.0, 0.0, -1.570796327]
+    confidence: provisional
+  forward:
+    parent_frame: xsens_link
+    child_frame: zed_front_camera_link
+    translation_m: [0.679450, 0.0, -0.107950]
+    nominal_rpy_rad: [0.0, 0.0, 0.0]
+    confidence: provisional_z_sign_conflicts_with_drawing
+  lidar:
+    parent_frame: xsens_link
+    child_frame: lidar
+    translation_m: [0.088900, 0.0, 0.158750]
+    nominal_rpy_rad: [0.0, 0.0, 0.0]
+    confidence: provisional

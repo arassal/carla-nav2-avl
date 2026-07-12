@@ -1,0 +1,36 @@
+seven_layer_costmap:
+  ros__parameters:
+    use_sim_time: true
+    publish_frequency: 10.0
+    output_topic: /seven_layer_costmap/costmap
+    require_all_layers: true
+    stale_timeout_s: 1.0
+    weights:
+      lanelet: 1.0
+      static_obstacle: 1.0
+      spatio_temporal_voxel: 1.0
+      prediction: 1.0
+      inflation: 1.0
+      traffic_regulation: 1.0
+      road_condition: 1.0
+
+road_condition_layer:
+  ros__parameters:
+    use_sim_time: true
+    camera_topics:
+      - /zed_front/rgb/image_rect_color
+      - /zed_left/rgb/image_rect_color
+      - /zed_right/rgb/image_rect_color
+    frame_id: base_link
+    width_m: 60.0
+    height_m: 60.0
+    resolution: 0.20
+    publish_frequency: 5.0
+
+synthetic_seven_layer_sources:
+  ros__parameters:
+    use_sim_time: true
+    frame_id: base_link
+    width_m: 60.0
+    height_m: 60.0
+    resolution: 0.20

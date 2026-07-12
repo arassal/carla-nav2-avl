@@ -1,0 +1,13 @@
+# CARLA native ROS 2 image topics vary with sensor ros_name. Remap these inputs
+# at launch if the CARLA bridge uses different names. The fusion API does not change.
+carla_to_zed:
+  front_rgb: /zed_front/rgb/image_rect_color
+  left_rgb: /zed_left/rgb/image_rect_color
+  right_rgb: /zed_right/rgb/image_rect_color
+  front_depth: /zed_front/depth/depth_registered
+  left_depth: /zed_left/depth/depth_registered
+  right_depth: /zed_right/depth/depth_registered
+future_svo:
+  wrapper_package: zed_wrapper
+  mode: svo
+  synchronization: external_timestamp_required
