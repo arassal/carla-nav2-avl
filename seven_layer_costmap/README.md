@@ -1,7 +1,8 @@
 # Seven-layer active costmap — milestone 1
 
-This ROS 2 Humble package is an isolated CARLA-first, three-ZED-X/SVO-ready
-prototype. It publishes one active fused `nav_msgs/OccupancyGrid` at
+This ROS 2 Humble package lives at repository root alongside `docs`,
+`image_thresholding`, `ros2_ws`, and `scripts`. It is an isolated CARLA-first,
+three-ZED-X/SVO-ready prototype. It publishes one active fused `nav_msgs/OccupancyGrid` at
 `/seven_layer_costmap/costmap` and keeps all seven contributing grids visible at
 `/seven_layer_costmap/layers/<layer_name>`.
 
@@ -27,7 +28,10 @@ information.
 ```bash
 cd ros2_ws
 source /opt/ros/humble/setup.bash
-colcon build --symlink-install --packages-select seven_layer_costmap
+# The package is one directory above this workspace, so include both base paths.
+colcon build --symlink-install \
+  --base-paths src ../seven_layer_costmap \
+  --packages-select seven_layer_costmap
 source install/setup.bash
 colcon test --packages-select seven_layer_costmap
 colcon test-result --verbose
@@ -35,6 +39,10 @@ ros2 launch seven_layer_costmap verification.launch.py
 ros2 topic hz /seven_layer_costmap/costmap
 ros2 topic echo --once /seven_layer_costmap/costmap
 ```
+
+Alternatively, create a development symlink at
+`ros2_ws/src/seven_layer_costmap` pointing to the repository-root package. Do not
+copy it into the workspace, because maintaining two package copies invites drift.
 
 `verification.launch.py` publishes all seven deterministic layers and requires no
 CARLA or ZED hardware. `milestone_demo.launch.py` replaces only the road-condition
