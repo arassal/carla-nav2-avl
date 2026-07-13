@@ -1,0 +1,54 @@
+# Camera-only test configuration for the videos in videos/recording 2.
+# Mounts match config/perception_dinosaur.yaml (from avros.urdf.xacro).
+# The video publisher supplies approximate intrinsics; replace them with each
+# ZED X's CameraInfo calibration for metric accuracy.
+perception_costmap:
+  ros__parameters:
+    costmap_topic: /perception/costmap
+    obstacle_points_topic: /perception/obstacle_points
+    frame_id: base_link
+    # Poll faster than the camera rate; synchronized sets are published once.
+    publish_rate: 30.0
+    x_min: -4.0
+    x_max: 16.0
+    y_min: -10.0
+    y_max: 10.0
+    resolution: 0.1
+
+    segmentation_method: hsv
+    use_camera_obstacles: true
+    obstacle_method: classical
+    use_lidar: false
+    image_stale_sec: 1.0
+    require_synchronized_cameras: true
+    camera_sync_slop_sec: 0.001
+    temporal_enabled: false
+
+    cameras: ["front", "left", "right"]
+    front:
+      image_topic: /camera/front/image
+      camera_info_topic: /camera/front/camera_info
+      ipm_mode: camera
+      cam_x: 0.6795
+      cam_y: 0.0
+      cam_height: 0.4476
+      cam_pitch_deg: 15.0
+      cam_yaw_deg: 0.0
+    left:
+      image_topic: /camera/left/image
+      camera_info_topic: /camera/left/camera_info
+      ipm_mode: camera
+      cam_x: 0.098
+      cam_y: 0.286
+      cam_height: 0.6126
+      cam_pitch_deg: 0.0
+      cam_yaw_deg: 90.0
+    right:
+      image_topic: /camera/right/image
+      camera_info_topic: /camera/right/camera_info
+      ipm_mode: camera
+      cam_x: 0.098
+      cam_y: -0.286
+      cam_height: 0.6126
+      cam_pitch_deg: 0.0
+      cam_yaw_deg: -90.0
