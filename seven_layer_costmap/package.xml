@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>seven_layer_costmap</name>
-  <version>0.4.0</version>
+  <version>0.5.0</version>
   <description>Three-ZED-X SVO perception pipeline for a seven-layer active costmap.</description>
   <maintainer email="jchy05@users.noreply.github.com">jchy05</maintainer>
   <license>MIT</license>
@@ -15,6 +15,7 @@
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>cv_bridge</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>

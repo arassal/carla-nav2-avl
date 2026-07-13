@@ -37,6 +37,16 @@ class ProjectContractTests(unittest.TestCase):
             self.assertTrue(text.startswith('#!/usr/bin/env bash'))
             self.assertIn('set -', text)
 
+    def test_diagnostic_collection_does_not_dump_all_environment_variables(self):
+        text = (ROOT / 'scripts' / 'collect_diagnostics.sh').read_text()
+        self.assertNotIn('printenv', text)
+
+    def test_timestamp_offsets_match_between_perception_nodes(self):
+        config = yaml.safe_load((ROOT / 'config' / 'seven_layer_costmap.yaml').read_text())
+        perception = config['three_zed_perception']['ros__parameters']['timestamp_offsets_s']
+        road = config['road_condition_layer']['ros__parameters']['timestamp_offsets_s']
+        self.assertEqual(perception, road)
+
 
 if __name__ == '__main__':
     unittest.main()

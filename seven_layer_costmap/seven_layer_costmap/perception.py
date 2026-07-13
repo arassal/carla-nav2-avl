@@ -73,13 +73,18 @@ class WorldOccupancyModel:
     """Sparse world-frame voxel history projected into a rolling vehicle grid."""
 
     def __init__(self, spec: GridSpec, persistence_s=2.0, voxel_m=0.20,
-                 z_resolution=0.25, static_hits=8, max_voxels=750000):
+                 z_resolution=0.25, static_hits=8, max_voxels=750000,
+                 max_clear_rays=75):
+        if (persistence_s <= 0 or voxel_m <= 0 or z_resolution <= 0 or
+                static_hits <= 0 or max_voxels <= 0 or max_clear_rays <= 0):
+            raise ValueError('world occupancy limits and resolutions must be positive')
         self.spec = spec
         self.persistence_s = persistence_s
         self.voxel_m = voxel_m
         self.z_resolution = z_resolution
         self.static_hits = static_hits
         self.max_voxels = max_voxels
+        self.max_clear_rays = max_clear_rays
         self.last_seen = {}
         self.hit_score = {}
 
@@ -96,7 +101,7 @@ class WorldOccupancyModel:
         world = base_to_world(points, pose)
         origins_world = base_to_world(np.asarray(sensor_origins_base).reshape(-1, 3), pose)
         # Clear only a sampled subset of rays to bound Python cost.
-        sample_step = max(1, len(world) // 500)
+        sample_step = max(1, math.ceil(len(world) / self.max_clear_rays))
         for index in range(0, len(world), sample_step):
             endpoint = world[index]
             origin = origins_world[index % len(origins_world)]
@@ -151,9 +156,12 @@ class WorldOccupancyModel:
         rows = ((base[:, 1] + self.spec.height_m / 2) / self.spec.resolution).astype(int)
         valid = ((cols >= 0) & (cols < self.spec.shape[1]) &
                  (rows >= 0) & (rows < self.spec.shape[0]))
-        for index in np.flatnonzero(valid):
-            target = static if self.hit_score.get(keys[index], 0) >= self.static_hits else transient
-            target[rows[index], cols[index]] = 100
+        scores = np.fromiter((self.hit_score.get(key, 0) for key in keys),
+                             dtype=np.int16, count=len(keys))
+        static_mask = valid & (scores >= self.static_hits)
+        transient_mask = valid & ~static_mask
+        static[rows[static_mask], cols[static_mask]] = 100
+        transient[rows[transient_mask], cols[transient_mask]] = 100
         return static, transient
 
 

@@ -26,6 +26,13 @@ road_condition_layer:
     height_m: 60.0
     resolution: 0.20
     publish_frequency: 5.0
+    stale_timeout_s: 0.5
+    require_all_cameras: true
+    max_camera_skew_s: 0.050
+    timestamp_offsets_s:
+      front: 0.0
+      left: 0.0
+      right: 0.0
 
 three_zed_perception:
   ros__parameters:
@@ -46,6 +53,7 @@ three_zed_perception:
     inflation_reaction_time_s: 0.35
     inflation_max_speed_extra_m: 3.0
     voxel_persistence_s: 2.0
+    max_clear_rays_per_cycle: 75
     require_odometry: true
     ego_min_x: -2.5
     ego_max_x: 0.8

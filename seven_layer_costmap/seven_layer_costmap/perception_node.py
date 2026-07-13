@@ -47,6 +47,7 @@ class ThreeZedPerceptionNode(Node):
         self.declare_parameter('inflation_reaction_time_s', 0.35)
         self.declare_parameter('inflation_max_speed_extra_m', 3.0)
         self.declare_parameter('voxel_persistence_s', 2.0)
+        self.declare_parameter('max_clear_rays_per_cycle', 75)
         self.declare_parameter('require_odometry', True)
         self.declare_parameter('ego_min_x', -2.5)
         self.declare_parameter('ego_max_x', 0.8)
@@ -77,7 +78,8 @@ class ThreeZedPerceptionNode(Node):
                               float(self.get_parameter('resolution').value))
         self._tracker = CentroidTracker()
         self._occupancy = WorldOccupancyModel(
-            self._spec, persistence_s=float(self.get_parameter('voxel_persistence_s').value))
+            self._spec, persistence_s=float(self.get_parameter('voxel_persistence_s').value),
+            max_clear_rays=int(self.get_parameter('max_clear_rays_per_cycle').value))
         self._pose = None
         self._pose_stamp = None
         self._speed_mps = 0.0
@@ -164,6 +166,18 @@ class ThreeZedPerceptionNode(Node):
         return translation, yaw
 
     def _process(self):
+        try:
+            self._process_once()
+        except Exception as error:  # Keep the timer alive and fail closed on malformed input.
+            self._rejected_sets += 1
+            self.get_logger().error(
+                f'Perception processing failed: {type(error).__name__}: {error}',
+                throttle_duration_sec=2.0)
+            self._publish_health(DiagnosticStatus.ERROR,
+                                 f'PROCESSING_ERROR:{type(error).__name__}',
+                                 0, time.monotonic())
+
+    def _process_once(self):
         started = time.monotonic()
         samples = self._collect()
         stale_limit = float(self.get_parameter('stale_camera_s').value)

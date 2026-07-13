@@ -141,6 +141,27 @@ inflation radius. Inflation grows with odometry speed and is capped by
 `inflation_max_speed_extra_m`; all dimensions remain provisional until the actual
 vehicle footprint is confirmed.
 
+Road-condition publication now also requires three fresh, timestamp-aligned image
+streams, so that layer cannot keep the master map alive with stale single-camera
+results. Fusion validates resolution, dimensions, frame, origin, and orientation
+before accepting a layer.
+
+Run a repeatable local timing smoke test for the dependency-light inflation and
+world-occupancy algorithms with:
+
+```bash
+python3 scripts/benchmark_core.py
+```
+
+The printed times are useful for comparing code or machines, but are not a
+real-time guarantee because they exclude ROS, ZED decoding, GPU depth generation,
+and the perception nodes.
+
+Inflation uses OpenCV's distance transform when available and retains a portable
+multi-source fallback. Free-space clearing is deliberately capped at
+`max_clear_rays_per_cycle` to bound processing cost; tune that parameter only
+after measuring clearing quality and latency on the target machine.
+
 GitHub Actions runs dependency-light unit tests, Python compilation, and YAML
 parsing whenever this package or its workflow changes. A green workflow does not
 replace ROS/ZED integration testing.

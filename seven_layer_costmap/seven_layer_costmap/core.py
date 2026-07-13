@@ -1,10 +1,16 @@
 """ROS-independent costmap algorithms, intentionally unit-testable without ROS."""
 
 from dataclasses import dataclass
+import heapq
 import math
 from typing import Dict, Iterable, Tuple
 
 import numpy as np
+
+try:
+    import cv2
+except ImportError:  # CI/reference environments may intentionally omit OpenCV.
+    cv2 = None
 
 LAYER_NAMES = (
     'lanelet', 'static_obstacle', 'spatio_temporal_voxel', 'prediction',
@@ -17,6 +23,14 @@ class GridSpec:
     width_m: float = 60.0
     height_m: float = 60.0
     resolution: float = 0.20
+
+    def __post_init__(self):
+        if self.width_m <= 0 or self.height_m <= 0 or self.resolution <= 0:
+            raise ValueError('grid dimensions and resolution must be positive')
+        for dimension in (self.width_m, self.height_m):
+            cells = dimension / self.resolution
+            if not math.isclose(cells, round(cells), abs_tol=1e-9):
+                raise ValueError('grid dimensions must be exact multiples of resolution')
 
     @property
     def shape(self) -> Tuple[int, int]:
@@ -50,22 +64,47 @@ def fuse_layers(layers: Dict[str, np.ndarray], weights=None) -> np.ndarray:
 
 def inflate(lethal_grid: np.ndarray, radius_m: float, resolution: float,
             decay: float = 3.0) -> np.ndarray:
-    """Euclidean inflation with exponential decay; dependency-free reference code."""
-    out = np.zeros_like(lethal_grid, dtype=np.uint8)
-    occupied = np.argwhere(lethal_grid >= 99)
-    radius_cells = int(math.ceil(radius_m / resolution))
-    height, width = out.shape
-    for oy, ox in occupied:
-        for dy in range(-radius_cells, radius_cells + 1):
-            for dx in range(-radius_cells, radius_cells + 1):
-                distance = math.hypot(dx, dy) * resolution
-                if distance > radius_m:
-                    continue
-                y, x = oy + dy, ox + dx
-                if 0 <= y < height and 0 <= x < width:
-                    cost = 99 if distance == 0 else round(98 * math.exp(-decay * distance))
-                    out[y, x] = max(out[y, x], cost)
-    out[lethal_grid >= 99] = 100
+    """Multi-source bounded inflation with exponential decay in O(cells log cells)."""
+    if radius_m < 0 or resolution <= 0 or decay < 0:
+        raise ValueError('radius and decay must be nonnegative; resolution must be positive')
+    source = np.asarray(lethal_grid) >= 99
+    out = np.zeros(source.shape, dtype=np.uint8)
+    if not source.any():
+        return out
+    if cv2 is not None:
+        free_space = (~source).astype(np.uint8)
+        distances = cv2.distanceTransform(free_space, cv2.DIST_L2,
+                                           cv2.DIST_MASK_PRECISE) * resolution
+        active = distances <= radius_m
+        out[active] = np.rint(98 * np.exp(-decay * distances[active])).astype(np.uint8)
+        out[source] = 100
+        return out
+    distances = np.full(source.shape, np.inf, dtype=np.float32)
+    queue = []
+    for row, col in np.argwhere(source):
+        distances[row, col] = 0.0
+        heapq.heappush(queue, (0.0, int(row), int(col)))
+    height, width = source.shape
+    neighbors = ((-1, 0, resolution), (1, 0, resolution),
+                 (0, -1, resolution), (0, 1, resolution),
+                 (-1, -1, resolution * math.sqrt(2)),
+                 (-1, 1, resolution * math.sqrt(2)),
+                 (1, -1, resolution * math.sqrt(2)),
+                 (1, 1, resolution * math.sqrt(2)))
+    while queue:
+        distance, row, col = heapq.heappop(queue)
+        if distance > distances[row, col] or distance > radius_m:
+            continue
+        for dr, dc, step in neighbors:
+            nr, nc = row + dr, col + dc
+            candidate = distance + step
+            if (0 <= nr < height and 0 <= nc < width and candidate <= radius_m and
+                    candidate < distances[nr, nc]):
+                distances[nr, nc] = candidate
+                heapq.heappush(queue, (candidate, nr, nc))
+    active = np.isfinite(distances) & (distances <= radius_m)
+    out[active] = np.rint(98 * np.exp(-decay * distances[active])).astype(np.uint8)
+    out[source] = 100
     return out
 
 

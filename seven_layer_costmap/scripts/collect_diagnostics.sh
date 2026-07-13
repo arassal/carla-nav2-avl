@@ -15,6 +15,12 @@ timeout 10 ros2 topic hz /seven_layer_costmap/costmap \
   >"$output_dir/costmap_rate.txt" 2>&1 || true
 nvidia-smi >"$output_dir/nvidia_smi.txt" 2>&1 || true
 python3 --version >"$output_dir/python.txt" 2>&1 || true
-printenv | sort >"$output_dir/environment.txt"
+{
+  echo "ROS_DISTRO=${ROS_DISTRO:-unset}"
+  echo "ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-unset}"
+  echo "RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-unset}"
+  echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-unset}"
+  echo "ZED_SDK_ROOT_DIR=${ZED_SDK_ROOT_DIR:-unset}"
+} >"$output_dir/environment.txt"
 
 echo "Diagnostics collected in: $output_dir"

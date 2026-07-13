@@ -38,6 +38,10 @@ class FusionNode(Node):
         self.get_logger().info('Waiting for seven costmap layers: ' + ', '.join(LAYER_NAMES))
 
     def _receive(self, name, msg):
+        if (msg.info.width == 0 or msg.info.height == 0 or msg.info.resolution <= 0 or
+                not msg.header.frame_id):
+            self.get_logger().error(f'Rejected {name}: invalid grid metadata')
+            return
         shape = (msg.info.height, msg.info.width)
         try:
             layer = normalize_layer(msg.data, shape)
@@ -47,10 +51,19 @@ class FusionNode(Node):
         with self._lock:
             if self._messages:
                 reference = next(iter(self._messages.values()))
+                origin = msg.info.origin
+                reference_origin = reference.info.origin
                 same_geometry = (msg.info.width == reference.info.width and
                                  msg.info.height == reference.info.height and
                                  abs(msg.info.resolution - reference.info.resolution) < 1e-6 and
-                                 msg.header.frame_id == reference.header.frame_id)
+                                 msg.header.frame_id == reference.header.frame_id and
+                                 abs(origin.position.x - reference_origin.position.x) < 1e-6 and
+                                 abs(origin.position.y - reference_origin.position.y) < 1e-6 and
+                                 abs(origin.position.z - reference_origin.position.z) < 1e-6 and
+                                 abs(origin.orientation.x - reference_origin.orientation.x) < 1e-6 and
+                                 abs(origin.orientation.y - reference_origin.orientation.y) < 1e-6 and
+                                 abs(origin.orientation.z - reference_origin.orientation.z) < 1e-6 and
+                                 abs(origin.orientation.w - reference_origin.orientation.w) < 1e-6)
                 if not same_geometry:
                     self.get_logger().error(f'Rejected {name}: grid geometry/frame mismatch')
                     return

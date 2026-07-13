@@ -93,6 +93,10 @@ class PerceptionTests(unittest.TestCase):
         self.assertEqual(before[10, 15], 100)
         self.assertEqual(after[10, 13], 100)
 
+    def test_world_occupancy_rejects_invalid_limits(self):
+        with self.assertRaises(ValueError):
+            WorldOccupancyModel(GridSpec(20, 20, 1), max_clear_rays=0)
+
     def test_world_occupancy_ray_clears_old_obstacle(self):
         spec = GridSpec(30, 30, 1)
         model = WorldOccupancyModel(spec, voxel_m=1.0, z_resolution=1.0)
