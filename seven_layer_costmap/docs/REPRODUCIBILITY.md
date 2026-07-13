@@ -14,9 +14,9 @@ left, and right. The ZED SDK derives these ROS inputs from the recordings:
 - visual-inertial odometry from the front camera.
 
 There is no LiDAR, Velodyne, `LaserScan`, radar, or external `PointCloud2` input.
-`config/zed_svo_override.yaml` sets `point_cloud_freq: 0.0`. The perception code
-back-projects stereo-depth pixels internally; that does not make LiDAR part of
-the system.
+The perception code back-projects stereo-depth pixels internally. A ZED wrapper
+may advertise its optional camera-derived point-cloud topic, but this package has
+no subscriber for it; that topic is neither LiDAR nor a required input.
 
 ## Reference environment
 

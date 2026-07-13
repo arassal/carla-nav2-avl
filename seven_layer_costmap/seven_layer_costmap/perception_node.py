@@ -105,9 +105,9 @@ class ThreeZedPerceptionNode(Node):
             prefix = f'/{camera}/{camera}_node'
             self.create_subscription(Image, prefix + '/depth/depth_registered',
                                      lambda m, n=logical: self._depth(n, m), qos_profile_sensor_data)
-            self.create_subscription(Image, prefix + '/left/color/rect/image',
+            self.create_subscription(Image, prefix + '/rgb/color/rect/image',
                                      lambda m, n=logical: self._rgb(n, m), qos_profile_sensor_data)
-            self.create_subscription(CameraInfo, prefix + '/left/camera_info',
+            self.create_subscription(CameraInfo, prefix + '/rgb/color/rect/camera_info',
                                      lambda m, n=logical: self._info(n, m), qos_profile_sensor_data)
         front_camera = self._logical['front']
         self.create_subscription(Odometry, f'/{front_camera}/{front_camera}_node/odom',

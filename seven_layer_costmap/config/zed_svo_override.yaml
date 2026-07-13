@@ -3,14 +3,13 @@
     svo:
       use_svo_timestamps: true
       svo_loop: false
-      svo_realtime: false
+      svo_realtime: true
     general:
       pub_resolution: CUSTOM
       pub_downscale_factor: 2.0
       pub_frame_rate: 15.0
     depth:
       depth_mode: NEURAL_LIGHT
-      point_cloud_freq: 0.0
     pos_tracking:
       pos_tracking_enabled: true
       publish_tf: false

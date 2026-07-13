@@ -18,9 +18,9 @@ road_condition_layer:
   ros__parameters:
     use_sim_time: true
     camera_topics:
-      - /zed_front/zed_front_node/left/color/rect/image
-      - /zed_left/zed_left_node/left/color/rect/image
-      - /zed_right/zed_right_node/left/color/rect/image
+      - /zed_front/zed_front_node/rgb/color/rect/image
+      - /zed_left/zed_left_node/rgb/color/rect/image
+      - /zed_right/zed_right_node/rgb/color/rect/image
     frame_id: base_link
     width_m: 60.0
     height_m: 60.0

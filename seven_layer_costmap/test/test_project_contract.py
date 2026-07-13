@@ -72,7 +72,8 @@ class ProjectContractTests(unittest.TestCase):
             self.assertNotIn(forbidden, runtime)
 
         zed = yaml.safe_load((ROOT / 'config' / 'zed_svo_override.yaml').read_text())
-        self.assertEqual(zed['/**']['ros__parameters']['depth']['point_cloud_freq'], 0.0)
+        self.assertNotIn('point_cloud_freq',
+                         zed['/**']['ros__parameters'].get('depth', {}))
         mounts = yaml.safe_load((ROOT / 'config' / 'camera_mounts.yaml').read_text())
         self.assertEqual(set(mounts['camera_mounts']), {'left', 'right', 'forward'})
 
@@ -83,6 +84,17 @@ class ProjectContractTests(unittest.TestCase):
                              perception['blind_spot_unknown_cost'])
         self.assertLess(perception['blind_spot_unknown_cost'], 100)
         self.assertEqual(len(perception['blind_spot_centers_deg']), 2)
+
+    def test_real_and_synthetic_zed_topics_match(self):
+        config = yaml.safe_load((ROOT / 'config' / 'seven_layer_costmap.yaml').read_text())
+        road_topics = config['road_condition_layer']['ros__parameters']['camera_topics']
+        perception = (ROOT / 'seven_layer_costmap' / 'perception_node.py').read_text()
+        synthetic = (ROOT / 'seven_layer_costmap' / 'synthetic_zed_node.py').read_text()
+        for topic in ('/rgb/color/rect/image', '/rgb/color/rect/camera_info',
+                      '/depth/depth_registered'):
+            self.assertIn(topic, perception)
+            self.assertIn(topic, synthetic)
+        self.assertTrue(all('/rgb/color/rect/image' in topic for topic in road_topics))
 
 
 if __name__ == '__main__':

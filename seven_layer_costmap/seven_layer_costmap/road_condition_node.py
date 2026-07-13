@@ -19,9 +19,9 @@ class RoadConditionNode(Node):
     def __init__(self):
         super().__init__('road_condition_layer')
         self.declare_parameter('camera_topics', [
-            '/zed_front/zed_front_node/left/color/rect/image',
-            '/zed_left/zed_left_node/left/color/rect/image',
-            '/zed_right/zed_right_node/left/color/rect/image'])
+            '/zed_front/zed_front_node/rgb/color/rect/image',
+            '/zed_left/zed_left_node/rgb/color/rect/image',
+            '/zed_right/zed_right_node/rgb/color/rect/image'])
         self.declare_parameter('width_m', 60.0)
         self.declare_parameter('height_m', 60.0)
         self.declare_parameter('resolution', 0.20)

@@ -19,7 +19,10 @@ def zed_instance(wrapper_launch, name, path, override):
             'node_name': name + '_node',
             'svo_path': path,
             'ros_params_override_path': override,
-            'publish_urdf': 'false',
+            # The wrapper needs its namespaced internal camera-frame statics for
+            # depth and positional tracking. Vehicle mount transforms remain
+            # project-owned because dynamic/map TF publication stays disabled.
+            'publish_urdf': 'true',
             'publish_tf': 'false',
             'publish_map_tf': 'false',
             'publish_imu_tf': 'false',

@@ -25,11 +25,11 @@ class SyntheticZedNode(Node):
         for camera in self.get_parameter('camera_names').value:
             prefix = f'/{camera}/{camera}_node'
             self._camera_publishers[camera] = {
-                'rgb': self.create_publisher(Image, prefix + '/left/color/rect/image',
+                'rgb': self.create_publisher(Image, prefix + '/rgb/color/rect/image',
                                              qos_profile_sensor_data),
                 'depth': self.create_publisher(Image, prefix + '/depth/depth_registered',
                                                qos_profile_sensor_data),
-                'info': self.create_publisher(CameraInfo, prefix + '/left/camera_info',
+                'info': self.create_publisher(CameraInfo, prefix + '/rgb/color/rect/camera_info',
                                               qos_profile_sensor_data),
             }
         front = self.get_parameter('camera_names').value[0]

@@ -8,7 +8,8 @@ three-ZED-X/SVO-ready prototype. It publishes one active fused `nav_msgs/Occupan
 
 The runtime sensor contract is camera-only: it does not subscribe to LiDAR,
 Velodyne, `LaserScan`, radar, or external `PointCloud2` topics. ZED stereo depth
-is back-projected internally, and ZED point-cloud publication is disabled. See
+is back-projected internally. The wrapper may advertise a camera-derived point
+cloud topic, but this package neither subscribes to nor requires it. See
 [`docs/REPRODUCIBILITY.md`](docs/REPRODUCIBILITY.md) for a clean-room build,
 sample-data manifest, and replay procedure.
 
@@ -32,8 +33,10 @@ updates; the fail-closed fusion node then stops the master map after its stale
 timeout. Status is available on `/seven_layer_costmap/perception_status`.
 
 Stereolabs documents SVO replay as a single-file wrapper operation, so this launch
-uses three wrapper instances. It deliberately disables their TF/map publication;
-the vehicle rig transforms are owned by this project and must be calibrated.
+uses three wrapper instances. Each wrapper publishes its namespaced internal
+camera-frame statics so depth and positional tracking can start, while dynamic
+and map TF publication remain disabled. Vehicle rig transforms are owned by this
+project and must be calibrated.
 
 The front wrapper's visual-inertial odometry is required. Observations are stored
 as sparse world-frame voxels and projected back into a rolling vehicle-centered
