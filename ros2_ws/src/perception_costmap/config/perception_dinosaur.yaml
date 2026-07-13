@@ -82,11 +82,37 @@ perception_costmap:
     temporal_threshold: 0.5
     temporal_enabled: true
 
-    # cost shape: off-road (observed, no obstacle) vs. true lethal obstacle,
-    # plus a distance-decay halo around obstacles (see occupancy.py).
-    offroad_cost: 65
+    # --- cost shape (see occupancy.build_cost_array) ---
+    # Leaving the road is a failure, not a shortcut: off-road (grass, curb,
+    # kerb, wall) is near-lethal. Deliberately 97 rather than a hard 100 --
+    # if road segmentation drops out (glare, shadow, wet asphalt) a hard 100
+    # everywhere would leave the planner with no legal cell and strand the
+    # car. 97 is avoided as strongly as an obstacle in practice while keeping
+    # a sliver of escape, and stays visually distinct from a true 100 obstacle.
+    offroad_cost: 97
+    # legacy single-halo params: only used if per-class layers are absent
     inflation_radius: 0.8
     cost_scaling_factor: 4.0
+
+    # Approach ramp: inflating INWARD from the off-road region makes cost rise
+    # as the car nears the road edge (~13 at 1.0 m in, ~36 at 0.5 m, 97 at the
+    # boundary) instead of a cliff. This is what gives the lane a gradient to
+    # centre in -- and what makes the costmap fade in colour instead of showing
+    # flat plateaus.
+    road_edge_radius: 1.5
+    road_edge_scaling: 2.0
+
+    # Per-class danger zones. Bigger radius + SMALLER scaling = cost stays high
+    # further out. People get a wide, slowly-decaying berth; cars decay fast
+    # because driving within a metre of a parked car is normal, not an error.
+    person_radius: 2.5        # ~47 at 0.5 m, ~22 at 1 m, ~5 at 2 m
+    person_scaling: 1.5
+    vehicle_radius: 1.0       # ~8 at 0.5 m: close passes are fine
+    vehicle_scaling: 5.0
+    cone_radius: 0.6
+    cone_scaling: 5.0
+    generic_radius: 0.8       # unclassified blob: previous default
+    generic_scaling: 4.0
     # blind spots are traversable with a mild penalty instead of ROS -1
     # (operator decision 2026-07-09: assume safe unless obstacles nearby --
     # obstacle inflation still bleeds into blind cells regardless)

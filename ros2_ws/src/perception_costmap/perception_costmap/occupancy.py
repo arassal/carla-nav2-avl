@@ -110,6 +110,27 @@ def inflate_costs(obstacle_mask: np.ndarray, resolution: float,
     return decay
 
 
+# --- per-class danger zones -------------------------------------------------
+# One inflation radius for everything treats a pedestrian and a parked car as
+# equally dangerous, which is wrong in both directions: you routinely drive
+# within a metre of a car, and you should never do that to a person. Each
+# class therefore gets its own (radius, scaling) pair. Larger radius + SMALLER
+# scaling = the cost stays high further out (people). Small radius + LARGE
+# scaling = cost collapses within centimetres (cars, cones).
+DEFAULT_OBSTACLE_CLASSES = {
+    "person":  dict(radius=2.5, scaling=1.5),   # wide, slow decay: keep clear
+    "vehicle": dict(radius=1.0, scaling=5.0),   # tight: passing close is normal
+    "cone":    dict(radius=0.6, scaling=5.0),   # tight
+    "generic": dict(radius=0.8, scaling=4.0),   # unclassified blob: old default
+}
+
+# Distance (m) over which cost ramps up as you approach the road edge from
+# *inside* the road, and how fast. This is what makes "the closer you get to
+# leaving the road, the worse it gets" a gradient instead of a cliff.
+DEFAULT_ROAD_EDGE_RADIUS = 1.5
+DEFAULT_ROAD_EDGE_SCALING = 2.0
+
+
 def build_cost_array(grid: GridSpec,
                      road_mask: np.ndarray,
                      obstacle_mask: np.ndarray,
@@ -117,37 +138,35 @@ def build_cost_array(grid: GridSpec,
                      offroad_cost: int = DEFAULT_OFFROAD_COST,
                      inflation_radius: float = DEFAULT_INFLATION_RADIUS,
                      cost_scaling_factor: float = DEFAULT_COST_SCALING_FACTOR,
-                     unknown_cost: int = UNKNOWN) -> np.ndarray:
+                     unknown_cost: int = UNKNOWN,
+                     obstacle_layers: dict = None,
+                     road_edge_radius: float = 0.0,
+                     road_edge_scaling: float = DEFAULT_ROAD_EDGE_SCALING) -> np.ndarray:
     """
     Fuse grid-space boolean masks into an int8 cost array (height, width).
 
-    Base layer (low -> high): unknown < off-road < road < obstacle.
-      - cells not in ``known_mask``      -> ``unknown_cost`` (default -1)
-      - known cells                      -> ``offroad_cost``
-      - road cells (within known)        -> FREE (0)
-      - obstacle cells                   -> LETHAL (100)
+    Base layer (low -> high): unknown < road < road-edge ramp < off-road < obstacle.
+      - cells not in ``known_mask``   -> ``unknown_cost``
+      - known, not road               -> ``offroad_cost`` (near-lethal: leaving
+                                          the road is a failure, not a shortcut)
+      - road cells                    -> FREE (0), then raised by the edge ramp
+      - obstacle cells                -> LETHAL (100), plus a per-class halo
 
-    ``unknown_cost``: -1 keeps ROS "unknown" semantics (planner decides).
-    A small positive value (e.g. 25) makes blind spots *traversable with a
-    mild penalty* -- the planner prefers observed-free ground but may cross
-    a camera blind wedge. Obstacle inflation still bleeds into blind cells
-    (see below), so blind ground next to a detected obstacle stays expensive.
+    ``road_edge_radius`` > 0 inflates *inward* from the off-road region, so a
+    cell 1 m inside the road carries ~offroad*exp(-scaling*1.0) and a cell on
+    the boundary carries the full ``offroad_cost``. Without it the road/off-road
+    transition is a step, which both plans badly (no incentive to centre in the
+    lane) and renders as a flat plateau of colour.
 
-    Then an inflation halo is applied around obstacle cells (see
-    ``inflate_costs``): any cell within ``inflation_radius`` of an obstacle
-    gets at least the decayed cost, even if it was UNKNOWN or FREE -- a real
-    obstacle's danger zone isn't gated on camera visibility elsewhere.
-    Obstacle cells themselves are always pinned back to exact LETHAL after
-    inflation, since the float decay only reaches ~lethal at d=0 by
-    approximation, not exactly.
+    ``obstacle_layers`` maps a class name -> {"mask": bool array, "radius": m,
+    "scaling": float}. Each layer is inflated with its own parameters and
+    combined with ``np.maximum``, so overlapping halos take the worst case.
+    When omitted, ``obstacle_mask`` is inflated with the single legacy
+    ``inflation_radius`` / ``cost_scaling_factor`` (backwards compatible).
 
     Road is clipped to ``known_mask``: a "road" pixel outside the observed
-    footprint (e.g. a mirror-projected sky pixel from a side camera) must
-    never mark unobserved ground drivable. Obstacles are NOT clipped --
-    the lidar legitimately sees beyond the camera FOVs, and a spurious
-    obstacle is the safe direction.
-
-    All masks must be shape (grid.height, grid.width).
+    footprint must never mark unobserved ground drivable. Obstacles are NOT
+    clipped -- a spurious obstacle is the safe direction.
     """
     shape = (grid.height, grid.width)
     for name, m in (("road_mask", road_mask), ("obstacle_mask", obstacle_mask)):
@@ -157,16 +176,44 @@ def build_cost_array(grid: GridSpec,
     if known_mask is None:
         known_mask = np.ones(shape, dtype=bool)
 
+    road = road_mask.astype(bool) & known_mask
     cost = np.full(shape, float(unknown_cost), dtype=np.float64)
-    cost[known_mask] = float(offroad_cost)      # observed but not road -> off-road
-    cost[road_mask.astype(bool) & known_mask] = FREE   # road overrides off-road
+    cost[known_mask] = float(offroad_cost)      # observed but not road
+    cost[road] = FREE                           # road overrides off-road
 
-    inflated = inflate_costs(obstacle_mask, grid.resolution,
-                             inflation_radius, cost_scaling_factor)
-    cost = np.maximum(cost, inflated)           # halo only ever raises cost
+    # Ramp up as we approach the road edge from inside the lane. Peak is
+    # offroad_cost (not LETHAL) so the ramp is continuous with the off-road
+    # region it grows out of -- no discontinuity at the boundary.
+    if road_edge_radius > 0:
+        offroad_region = known_mask & ~road
+        if offroad_region.any():
+            edge = inflate_costs(offroad_region, grid.resolution,
+                                 road_edge_radius, road_edge_scaling,
+                                 lethal=int(offroad_cost))
+            # Clip the ramp to OBSERVED ground. Without this it bleeds into the
+            # blind region and overwrites unknown_cost, silently making blind
+            # spots expensive -- the opposite of the documented intent. (Real
+            # obstacle halos below are deliberately NOT clipped: a detected
+            # obstacle's danger zone is real regardless of what we can see.)
+            edge = np.where(known_mask, edge, -1.0)
+            cost = np.maximum(cost, edge)
+
+    # Obstacle halos: per-class if given, else the single legacy halo.
+    if obstacle_layers:
+        for spec in obstacle_layers.values():
+            m = spec["mask"]
+            if m is None or not m.any():
+                continue
+            cost = np.maximum(cost, inflate_costs(
+                m.astype(bool), grid.resolution,
+                spec["radius"], spec["scaling"]))
+    else:
+        cost = np.maximum(cost, inflate_costs(
+            obstacle_mask, grid.resolution,
+            inflation_radius, cost_scaling_factor))
+
     cost[obstacle_mask.astype(bool)] = LETHAL   # obstacle cells: exact lethal
-
-    return cost.astype(np.int8)
+    return np.clip(cost, -1, LETHAL).astype(np.int8)
 
 
 def to_occupancy_grid_msg(cost: np.ndarray, grid: GridSpec, stamp=None,

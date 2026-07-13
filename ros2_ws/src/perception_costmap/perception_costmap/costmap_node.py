@@ -125,6 +125,19 @@ class CostmapNode(Node):
             ("offroad_cost", 65),
             ("inflation_radius", 0.8),
             ("cost_scaling_factor", 4.0),
+            # inward ramp from the road edge: cost rises the closer you get to
+            # leaving the road, instead of a flat step at the boundary
+            ("road_edge_radius", 1.5),
+            ("road_edge_scaling", 2.0),
+            # per-class danger zones (radius m, exponential decay rate)
+            ("person_radius", 2.5),
+            ("person_scaling", 1.5),
+            ("vehicle_radius", 1.0),
+            ("vehicle_scaling", 5.0),
+            ("cone_radius", 0.6),
+            ("cone_scaling", 5.0),
+            ("generic_radius", 0.8),
+            ("generic_scaling", 4.0),
             # -1 = ROS unknown; small positive = blind spots traversable
             # with a mild penalty (see occupancy.build_cost_array)
             ("unknown_cost", -1),
@@ -146,6 +159,14 @@ class CostmapNode(Node):
         self.inflation_radius = g["inflation_radius"]
         self.cost_scaling_factor = g["cost_scaling_factor"]
         self.unknown_cost = g["unknown_cost"]
+        self.road_edge_radius = g["road_edge_radius"]
+        self.road_edge_scaling = g["road_edge_scaling"]
+        self.obstacle_classes = {
+            "person":  dict(radius=g["person_radius"],  scaling=g["person_scaling"]),
+            "vehicle": dict(radius=g["vehicle_radius"], scaling=g["vehicle_scaling"]),
+            "cone":    dict(radius=g["cone_radius"],    scaling=g["cone_scaling"]),
+            "generic": dict(radius=g["generic_radius"], scaling=g["generic_scaling"]),
+        }
         self.obs_filter = TemporalObstacleFilter(
             (self.grid.height, self.grid.width),
             hit=g["temporal_hit"], miss=g["temporal_miss"],
@@ -196,6 +217,13 @@ class CostmapNode(Node):
 
         # ---- pub/sub ----
         self.costmap_pub = self.create_publisher(OccupancyGrid, g["costmap_topic"], 1)
+        # Publish the observed-ground mask alongside the costmap. Consumers
+        # (rviz colouring, analysis) must NOT recompute coverage themselves:
+        # with unknown_cost>0 the grid value cannot distinguish "unknown" from
+        # a real cost, and any second implementation of the coverage test
+        # drifts from this one (it did -- blind cells got painted as low-cost
+        # "go" ground). 100 = observed, 0 = never seen.
+        self.known_pub = self.create_publisher(OccupancyGrid, "/perception/known", 1)
         self.obs_pub = self.create_publisher(PointCloud2, g["obstacle_points_topic"], 1)
         if self.use_lidar:
             self.create_subscription(
@@ -225,6 +253,9 @@ class CostmapNode(Node):
         empty = np.zeros((self.grid.height, self.grid.width), bool)
         road_bev = empty.copy()
         obst_grid = empty.copy()
+        # per-class obstacle grids: a person needs a wider berth than a car,
+        # so the detector's class has to reach build_cost_array intact.
+        class_grids = {k: empty.copy() for k in ("person", "vehicle", "cone")}
         known = np.zeros((self.grid.height, self.grid.width), bool)
         saw_camera = False
 
@@ -247,13 +278,23 @@ class CostmapNode(Node):
                 obs_img = np.zeros(cam.img.shape[:2], bool)
                 if self.obstacle_method in ("classical", "both") or self.yolo is None:
                     obs_img |= obstacles.detect_obstacles_camera(cam.img, road)
+                class_imgs = {}
                 if self.yolo is not None and (
                         not self.yolo_cams or cam.name in self.yolo_cams):
-                    obs_img |= self.yolo.detect(cam.img)
+                    for group, m in self.yolo.detect_grouped(cam.img).items():
+                        class_imgs[group] = class_imgs.get(
+                            group, np.zeros_like(m)) | m
+                        obs_img |= m
                 if self.cones is not None:
-                    obs_img |= self.cones.detect(cam.img)
+                    cone_m = self.cones.detect(cam.img)
+                    class_imgs["cone"] = cone_m
+                    obs_img |= cone_m
                 obst_grid |= (bev.warp_to_bev(
                     obs_img.astype(np.uint8) * 255, cam.H, self.grid) > 127) & cam.known
+                for group, m in class_imgs.items():
+                    if group in class_grids:
+                        class_grids[group] |= (bev.warp_to_bev(
+                            m.astype(np.uint8) * 255, cam.H, self.grid) > 127) & cam.known
 
         lidar_fresh = (
             self._latest_points is not None
@@ -279,14 +320,32 @@ class CostmapNode(Node):
         if not saw_camera and not lidar_active:  # nothing seen yet
             return
 
+        # Intersect each class grid with the temporally-filtered union so the
+        # per-class layers inherit the same flicker rejection; anything that
+        # survived the filter without a class falls through to "generic".
+        layers = {}
+        claimed = np.zeros_like(obst_grid)
+        for group, gmask in class_grids.items():
+            m = gmask & obst_grid
+            claimed |= m
+            layers[group] = dict(mask=m, **self.obstacle_classes[group])
+        layers["generic"] = dict(mask=obst_grid & ~claimed,
+                                 **self.obstacle_classes["generic"])
+
         cost = build_cost_array(
             self.grid, road_bev, obst_grid, known_mask=known,
             offroad_cost=self.offroad_cost,
             inflation_radius=self.inflation_radius,
             cost_scaling_factor=self.cost_scaling_factor,
-            unknown_cost=self.unknown_cost)
-        msg = to_occupancy_grid_msg(cost, self.grid, stamp=self.get_clock().now().to_msg())
+            unknown_cost=self.unknown_cost,
+            obstacle_layers=layers,
+            road_edge_radius=self.road_edge_radius,
+            road_edge_scaling=self.road_edge_scaling)
+        stamp = self.get_clock().now().to_msg()
+        msg = to_occupancy_grid_msg(cost, self.grid, stamp=stamp)
         self.costmap_pub.publish(msg)
+        self.known_pub.publish(to_occupancy_grid_msg(
+            (known.astype(np.int8) * 100), self.grid, stamp=stamp))
 
     def _publish_obstacle_points(self, pts):
         from sensor_msgs_py import point_cloud2

@@ -90,12 +90,44 @@ class YoloObstacleDetector:
         self.footprint_frac = footprint_frac
         self.device = device
 
+    # COCO label -> danger class. A pedestrian needs a much wider berth than a
+    # parked car (see occupancy.DEFAULT_OBSTACLE_CLASSES), so the detector's
+    # class must survive into the costmap instead of being flattened into one
+    # anonymous "obstacle" blob.
+    CLASS_GROUPS = {
+        "person": "person",
+        "bicycle": "person",      # a rider is a person; treat as vulnerable
+        "motorcycle": "person",
+        "car": "vehicle",
+        "truck": "vehicle",
+        "bus": "vehicle",
+    }
+
     def detect(self, img_bgr):
+        """Union mask of every detected class (back-compat)."""
+        grouped = self.detect_grouped(img_bgr)
+        out = None
+        for m in grouped.values():
+            out = m if out is None else (out | m)
+        if out is None:
+            import numpy as _np
+            out = _np.zeros(img_bgr.shape[:2], bool)
+        return out
+
+    def detect_grouped(self, img_bgr):
+        """{group_name: footprint mask} -- 'person' and 'vehicle' kept apart."""
         res = self.model(img_bgr, verbose=False, conf=self.conf,
                          device=self.device)[0]
-        boxes = [b.xyxy[0].tolist() for b in res.boxes
-                 if res.names[int(b.cls[0])] in self.classes]
-        return boxes_to_footprint_mask(boxes, img_bgr.shape, self.footprint_frac)
+        per_group = {}
+        for b in res.boxes:
+            name = res.names[int(b.cls[0])]
+            if name not in self.classes:
+                continue
+            group = self.CLASS_GROUPS.get(name, "generic")
+            per_group.setdefault(group, []).append(b.xyxy[0].tolist())
+        return {g: boxes_to_footprint_mask(boxes, img_bgr.shape,
+                                           self.footprint_frac)
+                for g, boxes in per_group.items()}
 
 
 def cone_box_to_mask(img_bgr, box):
