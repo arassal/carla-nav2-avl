@@ -36,6 +36,20 @@ turns. Sampled depth rays clear previously occupied free space, while unobserved
 voxels expire after `voxel_persistence_s`. A configurable rectangular ego mask
 rejects visible vehicle-body returns before occupancy processing.
 
+If the three recordings use fixed clock offsets, correct them without changing
+the files:
+
+```yaml
+timestamp_offsets_s:
+  front: 0.0
+  left: -0.012
+  right: 0.008
+```
+
+The node reports current, mean, and maximum skew plus violation counts on
+`/seven_layer_costmap/diagnostics`. Offsets can correct a constant start-time
+difference; they cannot repair changing clock drift or dropped frames.
+
 ## Layer contract
 
 | Layer | Purpose | Milestone input | Vehicle input required later |
@@ -90,11 +104,46 @@ ros2 topic hz /seven_layer_costmap/costmap
 Unlike `verification.launch.py`, this does not publish prebuilt layer grids. It
 drives the same image/depth/odometry callbacks used by three-SVO playback.
 
+Open the prepared top-down view in another terminal:
+
+```bash
+ros2 launch seven_layer_costmap visualize.launch.py
+```
+
+All seven layers are configured as individually toggleable RViz Map displays.
+The fused map is enabled initially.
+
 `config/nav2_consumer.yaml` provides an experimental Nav2 Humble `StaticLayer`
 consumer for the fused topic and a provisional rectangular vehicle footprint.
 This integration cannot be runtime-validated in the current Windows workspace;
 verify frame transforms, rolling-map behavior, lifecycle transitions, and planner
 response on the target Ubuntu/ROS installation before enabling vehicle control.
+
+## Operational checks
+
+From the repository-root package directory:
+
+```bash
+./scripts/check_environment.sh
+./scripts/verify_runtime.sh
+./scripts/collect_diagnostics.sh /tmp/seven_layer_report
+```
+
+The environment check verifies required commands and ROS packages. Runtime
+verification checks all seven layers, the fused output, and diagnostics, then
+samples the costmap rate. Diagnostic collection records ROS nodes/topics, ROS
+Doctor, perception health, publication rate, GPU information, Python version,
+and the environment for troubleshooting.
+
+Standard diagnostic output includes accepted/rejected synchronized sets, image
+skew, processing latency, point and voxel counts, vehicle speed, and the active
+inflation radius. Inflation grows with odometry speed and is capped by
+`inflation_max_speed_extra_m`; all dimensions remain provisional until the actual
+vehicle footprint is confirmed.
+
+GitHub Actions runs dependency-light unit tests, Python compilation, and YAML
+parsing whenever this package or its workflow changes. A green workflow does not
+replace ROS/ZED integration testing.
 
 ## CARLA milestone procedure
 

@@ -4,9 +4,9 @@ import numpy as np
 
 from seven_layer_costmap.core import GridSpec
 from seven_layer_costmap.perception import (
-    CameraSample, PersistenceSeparator, Pose2D, ThreeCameraSynchronizer,
+    CameraSample, PersistenceSeparator, Pose2D, SkewMonitor, ThreeCameraSynchronizer,
     depth_to_base_points, obstacle_grid, traffic_regulation_layer,
-    remove_ground, vision_lane_layer, WorldOccupancyModel,
+    inflation_radius_for_speed, remove_ground, vision_lane_layer, WorldOccupancyModel,
 )
 
 
@@ -30,6 +30,18 @@ class PerceptionTests(unittest.TestCase):
         sync.update('left', sample(10.02))
         sync.update('right', sample(10.20))
         self.assertIsNone(sync.take())
+
+    def test_skew_monitor_counts_violations(self):
+        monitor = SkewMonitor(0.05)
+        monitor.observe([1.0, 1.02, 1.04])
+        monitor.observe([2.0, 2.02, 2.10])
+        summary = monitor.summary()
+        self.assertEqual(summary['violations'], 1)
+        self.assertAlmostEqual(summary['max_s'], 0.10)
+
+    def test_speed_dependent_inflation_is_bounded(self):
+        self.assertAlmostEqual(inflation_radius_for_speed(2.0, 4.0, 0.5, 3.0), 4.0)
+        self.assertAlmostEqual(inflation_radius_for_speed(2.0, 20.0, 0.5, 3.0), 5.0)
 
     def test_depth_backprojection_optical_to_base(self):
         depth = np.array([[2.0]], dtype=np.float32)

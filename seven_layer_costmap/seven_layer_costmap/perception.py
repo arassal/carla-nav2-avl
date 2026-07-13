@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 import math
+from collections import deque
 from typing import Dict, Optional
 
 import numpy as np
@@ -178,6 +179,36 @@ class ThreeCameraSynchronizer:
             return None
         self.last_emitted_s = min(stamps)
         return {name: self.samples[name] for name in self.names}
+
+
+class SkewMonitor:
+    """Bounded synchronization statistics for diagnostics and regression tests."""
+
+    def __init__(self, limit_s, window=100):
+        self.limit_s = limit_s
+        self.values = deque(maxlen=window)
+        self.violations = 0
+
+    def observe(self, stamps):
+        values = list(stamps)
+        skew = max(values) - min(values)
+        self.values.append(skew)
+        if skew > self.limit_s:
+            self.violations += 1
+        return skew
+
+    def summary(self):
+        if not self.values:
+            return {'current_s': 0.0, 'mean_s': 0.0, 'max_s': 0.0, 'violations': 0}
+        return {'current_s': self.values[-1], 'mean_s': sum(self.values) / len(self.values),
+                'max_s': max(self.values), 'violations': self.violations}
+
+
+def inflation_radius_for_speed(base_radius_m, speed_mps, reaction_time_s,
+                               max_extra_m):
+    """Conservative bounded longitudinal-speed proxy for radial inflation."""
+    return float(base_radius_m) + min(float(max_extra_m),
+                                      max(0.0, float(speed_mps)) * float(reaction_time_s))
 
 
 def depth_to_base_points(depth, intrinsic, translation, yaw=0.0, stride=4,

@@ -7,6 +7,7 @@ import time
 import numpy as np
 import rclpy
 from cv_bridge import CvBridge
+from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from nav_msgs.msg import OccupancyGrid
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
@@ -16,8 +17,9 @@ from std_msgs.msg import String
 
 from .core import GridSpec
 from .perception import (CameraSample, CentroidTracker, Pose2D,
-                         ThreeCameraSynchronizer, depth_to_base_points,
-                         derive_layers, stamp_seconds, WorldOccupancyModel)
+                         SkewMonitor, ThreeCameraSynchronizer, depth_to_base_points,
+                         derive_layers, inflation_radius_for_speed, stamp_seconds,
+                         WorldOccupancyModel)
 
 
 class CameraBuffer:
@@ -42,11 +44,16 @@ class ThreeZedPerceptionNode(Node):
         self.declare_parameter('resolution', 0.20)
         self.declare_parameter('frame_id', 'base_link')
         self.declare_parameter('inflation_radius_m', 2.5)
+        self.declare_parameter('inflation_reaction_time_s', 0.35)
+        self.declare_parameter('inflation_max_speed_extra_m', 3.0)
         self.declare_parameter('voxel_persistence_s', 2.0)
         self.declare_parameter('require_odometry', True)
         self.declare_parameter('ego_min_x', -2.5)
         self.declare_parameter('ego_max_x', 0.8)
         self.declare_parameter('ego_half_width', 1.2)
+        self.declare_parameter('timestamp_offsets_s.front', 0.0)
+        self.declare_parameter('timestamp_offsets_s.left', 0.0)
+        self.declare_parameter('timestamp_offsets_s.right', 0.0)
         # Provisional sketch-derived mount values. Override after calibration.
         self.declare_parameter('mounts.front.translation', [0.67945, 0.0, -0.10795])
         self.declare_parameter('mounts.front.yaw', 0.0)
@@ -64,6 +71,7 @@ class ThreeZedPerceptionNode(Node):
         self._lock = threading.Lock()
         self._sync = ThreeCameraSynchronizer(max_skew_s=float(
             self.get_parameter('max_camera_skew_s').value))
+        self._skew_monitor = SkewMonitor(float(self.get_parameter('max_camera_skew_s').value))
         self._spec = GridSpec(float(self.get_parameter('width_m').value),
                               float(self.get_parameter('height_m').value),
                               float(self.get_parameter('resolution').value))
@@ -72,12 +80,17 @@ class ThreeZedPerceptionNode(Node):
             self._spec, persistence_s=float(self.get_parameter('voxel_persistence_s').value))
         self._pose = None
         self._pose_stamp = None
+        self._speed_mps = 0.0
+        self._accepted_sets = 0
+        self._rejected_sets = 0
         self._last_input_wall = {name: 0.0 for name in self._logical}
         self._publishers = {name: self.create_publisher(
             OccupancyGrid, f'/seven_layer_costmap/layers/{name}', 1)
             for name in ('lanelet', 'static_obstacle', 'spatio_temporal_voxel',
                          'prediction', 'inflation', 'traffic_regulation')}
         self._status_pub = self.create_publisher(String, '/seven_layer_costmap/perception_status', 10)
+        self._diagnostic_pub = self.create_publisher(
+            DiagnosticArray, '/seven_layer_costmap/diagnostics', 10)
         for logical, camera in self._logical.items():
             prefix = f'/{camera}/{camera}_node'
             self.create_subscription(Image, prefix + '/depth/depth_registered',
@@ -122,7 +135,10 @@ class ThreeZedPerceptionNode(Node):
         p = msg.pose.pose.position
         with self._lock:
             self._pose = Pose2D(p.x, p.y, yaw)
-            self._pose_stamp = stamp_seconds(msg.header.stamp)
+            self._pose_stamp = (stamp_seconds(msg.header.stamp) + float(
+                self.get_parameter('timestamp_offsets_s.front').value))
+            velocity = msg.twist.twist.linear
+            self._speed_mps = math.sqrt(velocity.x ** 2 + velocity.y ** 2 + velocity.z ** 2)
 
     def _collect(self):
         allowed = float(self.get_parameter('max_rgb_depth_skew_s').value)
@@ -133,8 +149,13 @@ class ThreeZedPerceptionNode(Node):
                     continue
                 if abs(buf.depth_stamp - buf.rgb_stamp) > allowed:
                     continue
+                corrected = buf.depth_stamp + float(
+                    self.get_parameter(f'timestamp_offsets_s.{name}').value)
                 self._sync.update(name, CameraSample(buf.depth.copy(), buf.rgb.copy(),
-                                                     buf.k.copy(), buf.depth_stamp))
+                                                     buf.k.copy(), corrected))
+            if all(name in self._sync.samples for name in self._logical):
+                self._skew_monitor.observe(
+                    self._sync.samples[name].stamp_s for name in self._logical)
         return self._sync.take()
 
     def _mount(self, name):
@@ -143,20 +164,24 @@ class ThreeZedPerceptionNode(Node):
         return translation, yaw
 
     def _process(self):
+        started = time.monotonic()
         samples = self._collect()
         stale_limit = float(self.get_parameter('stale_camera_s').value)
         stale = [name for name, wall in self._last_input_wall.items()
                  if not wall or time.monotonic() - wall > stale_limit]
         if samples is None:
+            self._rejected_sets += 1
             reason = 'stale=' + ','.join(stale) if stale else 'waiting_for_synchronized_set'
-            self._status_pub.publish(String(data='NOT_READY:' + reason))
+            self._publish_health(DiagnosticStatus.WARN, 'NOT_READY:' + reason, 0, started)
             return
         with self._lock:
             pose, pose_stamp = self._pose, self._pose_stamp
         if bool(self.get_parameter('require_odometry').value):
             if pose is None or pose_stamp is None or abs(min(
                     sample.stamp_s for sample in samples.values()) - pose_stamp) > 0.25:
-                self._status_pub.publish(String(data='NOT_READY:missing_or_stale_odometry'))
+                self._rejected_sets += 1
+                self._publish_health(DiagnosticStatus.ERROR,
+                                     'NOT_READY:missing_or_stale_odometry', 0, started)
                 return
         pose = pose or Pose2D()
         clouds = []
@@ -179,15 +204,47 @@ class ThreeZedPerceptionNode(Node):
         points = np.concatenate(clouds, axis=0) if clouds else np.empty((0, 3))
         sensor_origins = np.concatenate(origins, axis=0) if origins else np.empty((0, 3))
         stamp_s = min(sample.stamp_s for sample in samples.values())
+        inflation_radius = inflation_radius_for_speed(
+            float(self.get_parameter('inflation_radius_m').value), self._speed_mps,
+            float(self.get_parameter('inflation_reaction_time_s').value),
+            float(self.get_parameter('inflation_max_speed_extra_m').value))
         layers = derive_layers(
             self._spec, points, samples['front'].bgr,
             [samples[name].bgr for name in ('front', 'left', 'right')],
             self._occupancy, self._tracker, pose, stamp_s, sensor_origins,
-            float(self.get_parameter('inflation_radius_m').value))
+            inflation_radius)
         for name, grid in layers.items():
             self._publishers[name].publish(self._grid_message(grid, stamp_s))
-        skew_ms = (max(s.stamp_s for s in samples.values()) - stamp_s) * 1000
-        self._status_pub.publish(String(data=f'ACTIVE:points={len(points)}:skew_ms={skew_ms:.1f}'))
+        self._accepted_sets += 1
+        self._publish_health(DiagnosticStatus.OK, 'ACTIVE', len(points), started,
+                             inflation_radius)
+
+    def _publish_health(self, level, message, points, started, inflation_radius=0.0):
+        elapsed_ms = (time.monotonic() - started) * 1000
+        skew = self._skew_monitor.summary()
+        text = (f'{message}:points={points}:skew_ms={skew["current_s"] * 1000:.1f}:'
+                f'latency_ms={elapsed_ms:.1f}')
+        self._status_pub.publish(String(data=text))
+        status = DiagnosticStatus()
+        status.level = level
+        status.name = 'seven_layer_costmap/three_zed_perception'
+        status.hardware_id = 'three_zed_svo'
+        status.message = message
+        values = {
+            'points': points, 'current_skew_ms': skew['current_s'] * 1000,
+            'mean_skew_ms': skew['mean_s'] * 1000,
+            'max_skew_ms': skew['max_s'] * 1000,
+            'skew_violations': skew['violations'], 'processing_latency_ms': elapsed_ms,
+            'accepted_sets': self._accepted_sets, 'rejected_sets': self._rejected_sets,
+            'speed_mps': self._speed_mps, 'inflation_radius_m': inflation_radius,
+            'active_voxels': len(self._occupancy.last_seen),
+        }
+        status.values = [KeyValue(key=str(key), value=str(value))
+                         for key, value in values.items()]
+        array = DiagnosticArray()
+        array.header.stamp = self.get_clock().now().to_msg()
+        array.status = [status]
+        self._diagnostic_pub.publish(array)
 
     def _grid_message(self, grid, stamp_s):
         msg = OccupancyGrid()
