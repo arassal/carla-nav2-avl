@@ -21,9 +21,3 @@ camera_mounts:
     translation_m: [0.679450, 0.0, -0.107950]
     nominal_rpy_rad: [0.0, 0.0, 0.0]
     confidence: provisional_z_sign_conflicts_with_drawing
-  lidar:
-    parent_frame: xsens_link
-    child_frame: lidar
-    translation_m: [0.088900, 0.0, 0.158750]
-    nominal_rpy_rad: [0.0, 0.0, 0.0]
-    confidence: provisional

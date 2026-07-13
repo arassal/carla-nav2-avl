@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>seven_layer_costmap</name>
-  <version>0.5.2</version>
+  <version>0.6.0</version>
   <description>Three-ZED-X SVO perception pipeline for a seven-layer active costmap.</description>
   <maintainer email="jchy05@users.noreply.github.com">jchy05</maintainer>
   <license>MIT</license>

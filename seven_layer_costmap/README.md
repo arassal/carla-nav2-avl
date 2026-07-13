@@ -6,6 +6,12 @@ three-ZED-X/SVO-ready prototype. It publishes one active fused `nav_msgs/Occupan
 `/seven_layer_costmap/costmap` and keeps all seven contributing grids visible at
 `/seven_layer_costmap/layers/<layer_name>`.
 
+The runtime sensor contract is camera-only: it does not subscribe to LiDAR,
+Velodyne, `LaserScan`, radar, or external `PointCloud2` topics. ZED stereo depth
+is back-projected internally, and ZED point-cloud publication is disabled. See
+[`docs/REPRODUCIBILITY.md`](docs/REPRODUCIBILITY.md) for a clean-room build,
+sample-data manifest, and replay procedure.
+
 ## Three-SVO pipeline
 
 The production-intent launch accepts exactly three absolute SVO paths and starts
@@ -36,6 +42,13 @@ turns. Sampled depth rays clear previously occupied free space, while unobserved
 voxels expire after `voxel_persistence_s`. A configurable rectangular ego mask
 rejects visible vehicle-body returns before occupancy processing.
 
+Valid stereo-depth rays also form an internal observed-space mask. The two
+configurable front/side blind wedges default to cost 25 when unobserved instead
+of being mislabeled nearly lethal by the lane corridor. Directly observed clear
+cells default to cost 0. Static/temporal memory, predicted motion, and obstacle
+inflation remain allowed to raise blind cells through the full range to 100.
+This confidence mask feeds the existing layers and is not an eighth layer.
+
 If the three recordings use fixed clock offsets, correct them without changing
 the files:
 
@@ -54,7 +67,7 @@ difference; they cannot repair changing clock drift or dropped frames.
 
 | Layer | Purpose | Milestone input | Vehicle input required later |
 |---|---|---|---|
-| lanelet | penalize locally non-drivable space | front-image marking estimate and conservative corridor | trained lane/drivable segmentation for production |
+| lanelet | penalize locally non-drivable space | front-image marking estimate, corridor, and visibility-aware blind wedges | trained lane/drivable segmentation for production |
 | static obstacle | persistent geometry | repeated fused depth occupancy | semantic static/dynamic classification |
 | spatio-temporal voxel | recent 3-D occupancy with decay | fused ZED depth with 2 s persistence | tune marking/ray-clearing on SVO data |
 | prediction | future dynamic occupancy | depth-component centroid tracking and constant velocity | multi-object semantic tracker and lane-aware predictor |
@@ -118,6 +131,14 @@ consumer for the fused topic and a provisional rectangular vehicle footprint.
 This integration cannot be runtime-validated in the current Windows workspace;
 verify frame transforms, rolling-map behavior, lifecycle transitions, and planner
 response on the target Ubuntu/ROS installation before enabling vehicle control.
+
+## Sample SVO2 recordings
+
+Three verified five-second ZED X recordings are available in
+[Google Drive](https://drive.google.com/drive/folders/1Ew1lBB8XXJfox14D_zE0RPyZoE5vuR9j).
+`config/sample_svo_manifest.yaml` records their filenames, camera serials, sizes,
+frame counts, and SHA-256 hashes so another developer can verify exact copies.
+Large recordings remain outside Git rather than inflating repository history.
 
 ## Operational checks
 
@@ -221,7 +242,7 @@ Before accepting an SVO run, also verify:
 - All three paths are absolute and each wrapper reaches playback state.
 - `/seven_layer_costmap/perception_status` stays `ACTIVE` with acceptable skew.
 - Registered depth uses `32FC1` meters and each `CameraInfo` is nonzero.
-- Point-cloud overlays align after replacing provisional mount transforms.
+- Depth-derived obstacle projections align after replacing provisional mount transforms.
 - ZED odometry remains synchronized with image/depth timestamps and does not jump.
 - The ego exclusion rectangle masks only vehicle bodywork, not nearby obstacles.
 - A newly visible clear ray removes a disappeared obstacle without waiting for expiry.

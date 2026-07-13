@@ -69,6 +69,69 @@ def _line_cells(start, end):
             y0 += sy
 
 
+def observed_mask_from_rays(spec: GridSpec, points, sensor_origins_base,
+                            max_rays=1200, dilation_cells=1):
+    """Rasterize camera-depth lines of sight into a 2-D observed-space mask.
+
+    This mask is deliberately separate from occupancy: a valid stereo-depth ray
+    means that space was observed, not that its endpoint is necessarily lethal.
+    Cells between the three camera fields therefore remain unobserved instead of
+    being mistaken for off-road or obstacle cells.
+    """
+    if max_rays <= 0 or dilation_cells < 0:
+        raise ValueError('visibility ray limit must be positive and dilation nonnegative')
+    pts = np.asarray(points, dtype=np.float32).reshape(-1, 3)
+    origins = np.asarray(sensor_origins_base, dtype=np.float32).reshape(-1, 3)
+    observed = np.zeros(spec.shape, dtype=bool)
+    if not len(pts):
+        return observed
+    if len(origins) == 1:
+        origins = np.repeat(origins, len(pts), axis=0)
+    if len(origins) != len(pts):
+        raise ValueError('every visibility endpoint requires a sensor origin')
+
+    height, width = spec.shape
+    step = max(1, math.ceil(len(pts) / int(max_rays)))
+    for index in range(0, len(pts), step):
+        origin, endpoint = origins[index], pts[index]
+        start = (int((origin[0] + spec.width_m / 2) / spec.resolution),
+                 int((origin[1] + spec.height_m / 2) / spec.resolution))
+        end = (int((endpoint[0] + spec.width_m / 2) / spec.resolution),
+               int((endpoint[1] + spec.height_m / 2) / spec.resolution))
+        for col, row in _line_cells(start, end):
+            if 0 <= row < height and 0 <= col < width:
+                observed[row, col] = True
+
+    # Sparse ray sampling can leave one-cell pinholes at long range. A bounded
+    # dilation closes only those sampling gaps; it does not bridge real camera
+    # blind wedges, which are many cells wide.
+    for _ in range(int(dilation_cells)):
+        padded = np.pad(observed, 1, mode='constant')
+        observed = np.logical_or.reduce([
+            padded[row:row + height, col:col + width]
+            for row in range(3) for col in range(3)
+        ])
+    return observed
+
+
+def blind_spot_mask(spec: GridSpec, centers_deg=(-45.0, 45.0),
+                    half_width_deg=18.0, min_range_m=1.5, max_range_m=12.0):
+    """Return configurable front/side camera-gap wedges in ``base_link``."""
+    if half_width_deg < 0 or min_range_m < 0 or max_range_m <= min_range_m:
+        raise ValueError('invalid blind-spot angular or range limits')
+    height, width = spec.shape
+    xs = (np.arange(width) + 0.5) * spec.resolution - spec.width_m / 2
+    ys = (np.arange(height) + 0.5) * spec.resolution - spec.height_m / 2
+    xx, yy = np.meshgrid(xs, ys)
+    radius = np.hypot(xx, yy)
+    bearing = np.degrees(np.arctan2(yy, xx))
+    mask = np.zeros(spec.shape, dtype=bool)
+    for center in centers_deg:
+        difference = (bearing - float(center) + 180.0) % 360.0 - 180.0
+        mask |= np.abs(difference) <= float(half_width_deg)
+    return mask & (radius >= float(min_range_m)) & (radius <= float(max_range_m))
+
+
 class WorldOccupancyModel:
     """Sparse world-frame voxel history projected into a rolling vehicle grid."""
 
@@ -329,7 +392,11 @@ class CentroidTracker:
         return tracks
 
 
-def vision_lane_layer(spec: GridSpec, bgr, half_width_m=2.0, max_range_m=25.0):
+def vision_lane_layer(spec: GridSpec, bgr, half_width_m=2.0, max_range_m=25.0,
+                      observed_mask=None, blind_centers_deg=(-45.0, 45.0),
+                      blind_half_width_deg=18.0, blind_min_range_m=1.5,
+                      blind_max_range_m=12.0, blind_unknown_cost=25,
+                      blind_clear_cost=0, off_corridor_cost=95):
     """Conservative local drivable corridor; image markings adjust its lateral center."""
     image = np.asarray(bgr, dtype=np.float32)
     lower = image[image.shape[0] // 2:]
@@ -342,12 +409,26 @@ def vision_lane_layer(spec: GridSpec, bgr, half_width_m=2.0, max_range_m=25.0):
         normalized = float(np.median(columns) / image.shape[1] - 0.5)
         offset = float(np.clip(-normalized * 3.0, -1.5, 1.5))
     h, w = spec.shape
-    costs = np.full((h, w), 95, dtype=np.uint8)
+    for name, value in (('blind_unknown_cost', blind_unknown_cost),
+                        ('blind_clear_cost', blind_clear_cost),
+                        ('off_corridor_cost', off_corridor_cost)):
+        if not 0 <= int(value) <= 100:
+            raise ValueError(f'{name} must be in [0, 100]')
+    costs = np.full((h, w), int(off_corridor_cost), dtype=np.uint8)
     xs = (np.arange(w) + 0.5) * spec.resolution - spec.width_m / 2
     ys = (np.arange(h) + 0.5) * spec.resolution - spec.height_m / 2
     corridor = ((xs[None, :] >= 0) & (xs[None, :] <= max_range_m) &
                 (np.abs(ys[:, None] - offset) <= half_width_m))
     costs[corridor] = 0
+    if observed_mask is not None:
+        observed = np.asarray(observed_mask, dtype=bool)
+        if observed.shape != spec.shape:
+            raise ValueError('observed_mask geometry does not match costmap')
+        blind = blind_spot_mask(
+            spec, blind_centers_deg, blind_half_width_deg,
+            blind_min_range_m, blind_max_range_m)
+        costs[blind & ~observed] = int(blind_unknown_cost)
+        costs[blind & observed] = int(blind_clear_cost)
     return costs
 
 
@@ -371,7 +452,14 @@ def traffic_regulation_layer(spec: GridSpec, images, stop_distance_m=8.0):
 
 def derive_layers(spec, points, front_bgr, all_images, occupancy_model, tracker, pose, stamp_s,
                   sensor_origins_base,
-                  inflation_radius_m=2.5):
+                  inflation_radius_m=2.5, visibility_max_rays=1200,
+                  visibility_dilation_cells=1, blind_centers_deg=(-45.0, 45.0),
+                  blind_half_width_deg=18.0, blind_min_range_m=1.5,
+                  blind_max_range_m=12.0, blind_unknown_cost=25,
+                  blind_clear_cost=0):
+    observed = observed_mask_from_rays(
+        spec, points, sensor_origins_base, visibility_max_rays,
+        visibility_dilation_cells)
     obstacle_points = remove_ground(points)
     obstacle_points = obstacle_points[(obstacle_points[:, 2] >= -1.5) &
                                       (obstacle_points[:, 2] <= 2.8)]
@@ -383,7 +471,14 @@ def derive_layers(spec, points, front_bgr, all_images, occupancy_model, tracker,
     prediction = rasterize_predictions(spec, tracks)
     combined = np.maximum.reduce((static, temporal, prediction))
     return {
-        'lanelet': vision_lane_layer(spec, front_bgr),
+        'lanelet': vision_lane_layer(
+            spec, front_bgr, observed_mask=observed,
+            blind_centers_deg=blind_centers_deg,
+            blind_half_width_deg=blind_half_width_deg,
+            blind_min_range_m=blind_min_range_m,
+            blind_max_range_m=blind_max_range_m,
+            blind_unknown_cost=blind_unknown_cost,
+            blind_clear_cost=blind_clear_cost),
         'static_obstacle': static,
         'spatio_temporal_voxel': temporal,
         'prediction': prediction,

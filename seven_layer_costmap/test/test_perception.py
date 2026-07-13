@@ -4,9 +4,11 @@ import numpy as np
 
 from seven_layer_costmap.core import GridSpec
 from seven_layer_costmap.perception import (
-    CameraSample, PersistenceSeparator, Pose2D, SkewMonitor, ThreeCameraSynchronizer,
-    depth_to_base_points, obstacle_grid, traffic_regulation_layer,
-    inflation_radius_for_speed, remove_ground, vision_lane_layer, WorldOccupancyModel,
+    blind_spot_mask, CameraSample, CentroidTracker, derive_layers,
+    PersistenceSeparator, Pose2D, SkewMonitor, ThreeCameraSynchronizer,
+    depth_to_base_points, obstacle_grid, observed_mask_from_rays,
+    traffic_regulation_layer, inflation_radius_for_speed, remove_ground,
+    vision_lane_layer, WorldOccupancyModel,
 )
 
 
@@ -76,6 +78,50 @@ class PerceptionTests(unittest.TestCase):
         layer = vision_lane_layer(spec, image)
         self.assertEqual(layer[10, 12], 0)
         self.assertGreater(layer[2, 12], 0)
+
+    def test_visibility_mask_follows_depth_ray(self):
+        spec = GridSpec(20, 20, 1)
+        observed = observed_mask_from_rays(
+            spec, [[5.0, 0.0, 0.0]], [[0.0, 0.0, 0.0]],
+            max_rays=1, dilation_cells=0)
+        self.assertTrue(observed[10, 10])
+        self.assertTrue(observed[10, 15])
+        self.assertFalse(observed[15, 15])
+
+    def test_blind_spots_are_only_front_side_wedges(self):
+        spec = GridSpec(20, 20, 1)
+        blind = blind_spot_mask(spec, half_width_deg=12, min_range_m=1, max_range_m=10)
+        self.assertTrue(blind[15, 15])   # approximately +45 degrees
+        self.assertTrue(blind[5, 15])    # approximately -45 degrees
+        self.assertFalse(blind[10, 15])  # directly forward
+        self.assertFalse(blind[15, 5])   # rear-left
+
+    def test_lane_layer_uses_mild_cost_for_unobserved_blind_cell(self):
+        spec = GridSpec(20, 20, 1)
+        image = np.zeros((20, 20, 3), dtype=np.uint8)
+        observed = np.zeros(spec.shape, dtype=bool)
+        layer = vision_lane_layer(spec, image, observed_mask=observed,
+                                  blind_half_width_deg=12)
+        self.assertEqual(layer[15, 15], 25)
+        self.assertEqual(layer[15, 5], 95)
+        observed[15, 15] = True
+        layer = vision_lane_layer(spec, image, observed_mask=observed,
+                                  blind_half_width_deg=12)
+        self.assertEqual(layer[15, 15], 0)
+
+    def test_nearby_obstacle_inflation_raises_blind_spot_risk(self):
+        spec = GridSpec(20, 20, 1)
+        image = np.zeros((20, 20, 3), dtype=np.uint8)
+        occupancy = WorldOccupancyModel(spec, voxel_m=1.0, z_resolution=1.0)
+        layers = derive_layers(
+            spec, np.array([[5.0, 4.0, 0.5]], dtype=np.float32), image,
+            [image, image, image], occupancy, CentroidTracker(), Pose2D(), 1.0,
+            np.array([[0.0, 0.0, 0.0]], dtype=np.float32),
+            inflation_radius_m=2.5, visibility_max_rays=1,
+            visibility_dilation_cells=0, blind_half_width_deg=12)
+        self.assertEqual(layers['lanelet'][15, 15], 25)
+        self.assertGreater(layers['inflation'][15, 15], 25)
+        self.assertEqual(layers['spatio_temporal_voxel'][14, 15], 100)
 
     def test_red_signal_adds_stop_barrier(self):
         spec = GridSpec(20, 20, 1)

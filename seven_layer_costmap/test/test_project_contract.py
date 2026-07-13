@@ -60,6 +60,30 @@ class ProjectContractTests(unittest.TestCase):
         perception_hz = config['three_zed_perception']['ros__parameters']['processing_frequency']
         self.assertEqual(fusion_hz, perception_hz)
 
+    def test_runtime_contract_is_camera_only(self):
+        checked = [
+            ROOT / 'seven_layer_costmap' / 'perception_node.py',
+            ROOT / 'seven_layer_costmap' / 'perception.py',
+            ROOT / 'launch' / 'three_svo_costmap.launch.py',
+            ROOT / 'config' / 'seven_layer_costmap.yaml',
+        ]
+        runtime = '\n'.join(path.read_text().lower() for path in checked)
+        for forbidden in ('laserscan', 'pointcloud2', 'velodyne', 'lidar_topic'):
+            self.assertNotIn(forbidden, runtime)
+
+        zed = yaml.safe_load((ROOT / 'config' / 'zed_svo_override.yaml').read_text())
+        self.assertEqual(zed['/**']['ros__parameters']['depth']['point_cloud_freq'], 0.0)
+        mounts = yaml.safe_load((ROOT / 'config' / 'camera_mounts.yaml').read_text())
+        self.assertEqual(set(mounts['camera_mounts']), {'left', 'right', 'forward'})
+
+    def test_blind_spot_costs_are_ordered_and_nonlethal(self):
+        config = yaml.safe_load((ROOT / 'config' / 'seven_layer_costmap.yaml').read_text())
+        perception = config['three_zed_perception']['ros__parameters']
+        self.assertLessEqual(perception['blind_spot_clear_cost'],
+                             perception['blind_spot_unknown_cost'])
+        self.assertLess(perception['blind_spot_unknown_cost'], 100)
+        self.assertEqual(len(perception['blind_spot_centers_deg']), 2)
+
 
 if __name__ == '__main__':
     unittest.main()

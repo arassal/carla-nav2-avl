@@ -54,6 +54,18 @@ three_zed_perception:
     inflation_max_speed_extra_m: 3.0
     voxel_persistence_s: 2.0
     max_clear_rays_per_cycle: 75
+    # Camera-only blind-spot handling. These wedges cover the two gaps between
+    # the front and side ZED X views. Direct depth rays make cells observed;
+    # unobserved gap cells receive a mild cost, while obstacle inflation,
+    # temporal memory, and prediction may still raise them to lethal.
+    visibility_max_rays_per_cycle: 1200
+    visibility_dilation_cells: 1
+    blind_spot_centers_deg: [-45.0, 45.0]
+    blind_spot_half_width_deg: 18.0
+    blind_spot_min_range_m: 1.5
+    blind_spot_max_range_m: 12.0
+    blind_spot_unknown_cost: 25
+    blind_spot_clear_cost: 0
     require_odometry: true
     ego_min_x: -2.5
     ego_max_x: 0.8

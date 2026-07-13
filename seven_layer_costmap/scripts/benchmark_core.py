@@ -9,7 +9,9 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
 from seven_layer_costmap.core import GridSpec, inflate
-from seven_layer_costmap.perception import Pose2D, WorldOccupancyModel
+from seven_layer_costmap.perception import (
+    observed_mask_from_rays, Pose2D, WorldOccupancyModel,
+)
 
 
 def timed(label, function):
@@ -34,11 +36,15 @@ def main():
                               rng.uniform(-12.0, 12.0, 15000),
                               rng.uniform(-1.0, 2.5, 15000)))
     origins = np.zeros_like(points)
+    observed = timed('camera_visibility_1200_rays',
+                     lambda: observed_mask_from_rays(
+                         spec, points, origins, max_rays=1200, dilation_cells=1))
     model = WorldOccupancyModel(spec)
     timed('world_voxel_observe_15000_points',
           lambda: model.observe(points, Pose2D(), origins, 1.0))
     static, temporal = timed('world_voxel_project', lambda: model.project(Pose2D(), 1.0))
     print(f'inflated_cells: {int((inflated > 0).sum())}')
+    print(f'observed_cells: {int(observed.sum())}')
     print(f'active_voxels: {len(model.last_seen)}')
     print(f'projected_cells: {int(((static > 0) | (temporal > 0)).sum())}')
 

@@ -48,6 +48,14 @@ class ThreeZedPerceptionNode(Node):
         self.declare_parameter('inflation_max_speed_extra_m', 3.0)
         self.declare_parameter('voxel_persistence_s', 2.0)
         self.declare_parameter('max_clear_rays_per_cycle', 75)
+        self.declare_parameter('visibility_max_rays_per_cycle', 1200)
+        self.declare_parameter('visibility_dilation_cells', 1)
+        self.declare_parameter('blind_spot_centers_deg', [-45.0, 45.0])
+        self.declare_parameter('blind_spot_half_width_deg', 18.0)
+        self.declare_parameter('blind_spot_min_range_m', 1.5)
+        self.declare_parameter('blind_spot_max_range_m', 12.0)
+        self.declare_parameter('blind_spot_unknown_cost', 25)
+        self.declare_parameter('blind_spot_clear_cost', 0)
         self.declare_parameter('require_odometry', True)
         self.declare_parameter('ego_min_x', -2.5)
         self.declare_parameter('ego_max_x', 0.8)
@@ -226,7 +234,23 @@ class ThreeZedPerceptionNode(Node):
             self._spec, points, samples['front'].bgr,
             [samples[name].bgr for name in ('front', 'left', 'right')],
             self._occupancy, self._tracker, pose, stamp_s, sensor_origins,
-            inflation_radius)
+            inflation_radius,
+            visibility_max_rays=int(
+                self.get_parameter('visibility_max_rays_per_cycle').value),
+            visibility_dilation_cells=int(
+                self.get_parameter('visibility_dilation_cells').value),
+            blind_centers_deg=list(
+                self.get_parameter('blind_spot_centers_deg').value),
+            blind_half_width_deg=float(
+                self.get_parameter('blind_spot_half_width_deg').value),
+            blind_min_range_m=float(
+                self.get_parameter('blind_spot_min_range_m').value),
+            blind_max_range_m=float(
+                self.get_parameter('blind_spot_max_range_m').value),
+            blind_unknown_cost=int(
+                self.get_parameter('blind_spot_unknown_cost').value),
+            blind_clear_cost=int(
+                self.get_parameter('blind_spot_clear_cost').value))
         for name, grid in layers.items():
             self._layer_publishers[name].publish(self._grid_message(grid, stamp_s))
         self._accepted_sets += 1
