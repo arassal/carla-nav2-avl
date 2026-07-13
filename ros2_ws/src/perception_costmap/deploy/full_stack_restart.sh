@@ -28,7 +28,7 @@ pkill -f web_video_server 2>/dev/null || true
 pkill -f "python3 -m http\.server 8090" 2>/dev/null || true
 sleep 3
 
-echo "[1/6] sensors (TF + velodyne + xsens)..."
+echo "[1/7] sensors (TF + velodyne + xsens)..."
 # Start the tmux server in a systemd user scope (linger is enabled): a scope
 # lives until every process in it exits, so the daemonized tmux server
 # survives SSH teardown. (A service unit reaps it the moment the client
@@ -51,7 +51,7 @@ sleep 3
 tmux -L percept has-session -t percept
 sleep 15
 
-echo "[1b/6] EKF (odom->base_link; velodyne + Nav2 need the odom frame)..."
+echo "[1b/7] EKF (odom->base_link; velodyne + Nav2 need the odom frame)..."
 tmux -L percept new-window -t percept -n ekf \
   "bash -c \"source /home/dinosaur/IGVC/install/setup.bash && $E && ros2 run robot_localization ekf_node --ros-args -r __node:=ekf_filter_node_odom --params-file $CFG/ekf.yaml 2>&1 | tee /tmp/ekf.log; exec bash\""
 sleep 5
@@ -68,29 +68,40 @@ echo \"[watchdog] $name exited, relaunching in 5s\" | tee -a /tmp/${name}.log; \
 sleep 5; done"
 }
 
-echo "[2/6] zed_front..."
+echo "[2/7] zed_front..."
 tmux -L percept new-window -t percept -n zed_front "bash -c '$(zed_cmd zed_front 42569280)'"
 sleep 40
 
-echo "[3/6] zed_left..."
+echo "[3/7] zed_left..."
 tmux -L percept new-window -t percept -n zed_left "bash -c '$(zed_cmd zed_left 49910017)'"
 sleep 40
 
-echo "[4/6] zed_right..."
+echo "[4/7] zed_right..."
 tmux -L percept new-window -t percept -n zed_right "bash -c '$(zed_cmd zed_right 43779087)'"
 sleep 40
 
-echo "[5/6] costmap (3-cam fused, TRT engine + TwinLiteNet)..."
+echo "[5/7] costmap (3-cam fused, TRT engine + TwinLiteNet)..."
 tmux -L percept new-window -t percept -n costmap \
   "bash -c \"source /opt/ros/humble/setup.bash && source /home/dinosaur/carla-nav2-avl/ros2_ws/install/setup.bash && $E && ros2 launch perception_costmap perception.launch.py config:=/home/dinosaur/carla-nav2-avl/ros2_ws/src/perception_costmap/config/perception_dinosaur.yaml 2>&1 | tee /tmp/costmap.log; exec bash\""
 sleep 15
 
-echo "[6/6] viz node + streaming servers..."
+echo "[6/7] viz node + streaming servers..."
 tmux -L percept new-window -t percept -n viz \
   "bash /home/dinosaur/carla-nav2-avl/ros2_ws/src/perception_costmap/deploy/run_viz.sh 2>&1 | tee /tmp/viz_node.log"
 tmux -L percept new-window -t percept -n wvs \
   "bash -c \"source /opt/ros/humble/setup.bash && $E && ros2 run web_video_server web_video_server --ros-args -p port:=8080 -p address:=0.0.0.0 2>&1 | tee /tmp/wvs.log; exec bash\""
 tmux -L percept new-window -t percept -n www \
   "bash -c \"cd /home/dinosaur/live_dashboard && python3 -m http.server 8090 --bind 0.0.0.0; exec bash\""
+
+echo "[7/7] costmap colorizer + rviz (costmap + 3 cameras)..."
+# costmap_rgb: recolours /perception/costmap into an RGB cloud for RViz
+# (green=go / orange=medium / red=bad / black=unknown). Headless, always runs.
+tmux -L percept new-window -t percept -n costmap_rgb \
+  "bash /home/dinosaur/carla-nav2-avl/ros2_ws/src/perception_costmap/deploy/run_costmap_rgb.sh 2>&1 | tee /tmp/costmap_rgb.log"
+sleep 5
+# rviz: waits internally for an X display (NoMachine creates one on connect,
+# not at boot), so this window is safe to start headless.
+tmux -L percept new-window -t percept -n rviz \
+  "bash /home/dinosaur/carla-nav2-avl/ros2_ws/src/perception_costmap/deploy/run_rviz.sh 2>&1 | tee /tmp/rviz.log"
 
 echo "done: $(tmux -L percept list-windows -t percept -F '#W' | tr '\n' ' ')"
