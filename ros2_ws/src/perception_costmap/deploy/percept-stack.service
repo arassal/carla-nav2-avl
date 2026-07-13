@@ -13,7 +13,7 @@ Type=oneshot
 RemainAfterExit=yes
 User=dinosaur
 WorkingDirectory=/home/dinosaur
-ExecStart=/bin/bash /home/dinosaur/carla-nav2-avl/ros2_ws/src/perception_costmap/deploy/boot_stack.sh
+ExecStart=/bin/bash /home/dinosaur/carla-nav2-avl/ros2_ws/src/perception_costmap/deploy/full_stack_restart.sh --boot
 ExecStop=/usr/bin/tmux -L percept kill-session -t percept
 TimeoutStartSec=420
 

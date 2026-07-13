@@ -2,7 +2,20 @@
 # Rebuild the whole percept tmux -L percept session from scratch: sensors (TF+lidar),
 # 3 ZED cameras (sequential, watchdog loops), fused costmap (TRT engine +
 # TwinLiteNet), live viz node, web_video_server, dashboard http server.
+#
+# Usage:
+#   full_stack_restart.sh          # manual restart: wrap tmux in a systemd
+#                                   # --user --scope so it survives SSH teardown
+#   full_stack_restart.sh --boot    # boot-time restart (invoked by
+#                                   # percept-stack.service): skip the scope
+#                                   # wrapper -- the service's own cgroup is
+#                                   # the persistence
 set -e
+
+BOOT=false
+if [ "$1" = "--boot" ]; then
+  BOOT=true
+fi
 
 CFG=/home/dinosaur/IGVC/install/avros_bringup/share/avros_bringup/config
 E="export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && export CYCLONEDDS_URI=file://$CFG/cyclonedds.xml"
@@ -22,11 +35,18 @@ echo "[1/6] sensors (TF + velodyne + xsens)..."
 # detaches — learned the hard way.) Dedicated socket (-L percept): on the
 # default socket an operator's pre-existing tmux server would own the
 # session in THEIR login cgroup, and the scope would protect nothing.
-systemctl --user stop percept-tmux.scope 2>/dev/null || true
-systemctl --user reset-failed percept-tmux.scope 2>/dev/null || true
-systemd-run --user --scope --collect --unit percept-tmux \
+# --boot (percept-stack.service): the service cgroup is the persistence --
+# plain tmux, no scope wrapper.
+if [ "$BOOT" = false ]; then
+  systemctl --user stop percept-tmux.scope 2>/dev/null || true
+  systemctl --user reset-failed percept-tmux.scope 2>/dev/null || true
+  systemd-run --user --scope --collect --unit percept-tmux \
+    tmux -L percept new-session -d -s percept -n sensors \
+    "bash -c \"source /home/dinosaur/IGVC/install/setup.bash && $E && ros2 launch avros_bringup sensors.launch.py 2>&1 | tee /tmp/sensors.log; exec bash\""
+else
   tmux -L percept new-session -d -s percept -n sensors \
-  "bash -c \"source /home/dinosaur/IGVC/install/setup.bash && $E && ros2 launch avros_bringup sensors.launch.py 2>&1 | tee /tmp/sensors.log; exec bash\""
+    "bash -c \"source /home/dinosaur/IGVC/install/setup.bash && $E && ros2 launch avros_bringup sensors.launch.py 2>&1 | tee /tmp/sensors.log; exec bash\""
+fi
 sleep 3
 tmux -L percept has-session -t percept
 sleep 15
