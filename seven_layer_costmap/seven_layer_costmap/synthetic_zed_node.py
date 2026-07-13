@@ -21,10 +21,10 @@ class SyntheticZedNode(Node):
         self.declare_parameter('moving_vehicle', True)
         self._bridge = CvBridge()
         self._frame = 0
-        self._publishers = {}
+        self._camera_publishers = {}
         for camera in self.get_parameter('camera_names').value:
             prefix = f'/{camera}/{camera}_node'
-            self._publishers[camera] = {
+            self._camera_publishers[camera] = {
                 'rgb': self.create_publisher(Image, prefix + '/left/color/rect/image',
                                              qos_profile_sensor_data),
                 'depth': self.create_publisher(Image, prefix + '/depth/depth_registered',
@@ -60,7 +60,7 @@ class SyntheticZedNode(Node):
         height = int(self.get_parameter('height').value)
         fx = width * 0.8
         fy = width * 0.8
-        for index, (camera, publishers) in enumerate(self._publishers.items()):
+        for index, (camera, publishers) in enumerate(self._camera_publishers.items()):
             rgb, depth = self._images(index)
             rgb_msg = self._bridge.cv2_to_imgmsg(rgb, 'bgr8')
             depth_msg = self._bridge.cv2_to_imgmsg(depth, '32FC1')

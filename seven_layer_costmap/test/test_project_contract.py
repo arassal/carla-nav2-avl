@@ -47,6 +47,13 @@ class ProjectContractTests(unittest.TestCase):
         road = config['road_condition_layer']['ros__parameters']['timestamp_offsets_s']
         self.assertEqual(perception, road)
 
+    def test_nodes_do_not_overwrite_rclpy_reserved_collections(self):
+        reserved = ('_publishers', '_subscriptions', '_timers', '_clients', '_services')
+        for path in (ROOT / 'seven_layer_costmap').glob('*_node.py'):
+            text = path.read_text()
+            for name in reserved:
+                self.assertNotIn(f'self.{name} =', text, f'{path.name} overwrites {name}')
+
 
 if __name__ == '__main__':
     unittest.main()

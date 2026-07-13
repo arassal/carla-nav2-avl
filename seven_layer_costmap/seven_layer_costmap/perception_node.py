@@ -86,7 +86,7 @@ class ThreeZedPerceptionNode(Node):
         self._accepted_sets = 0
         self._rejected_sets = 0
         self._last_input_wall = {name: 0.0 for name in self._logical}
-        self._publishers = {name: self.create_publisher(
+        self._layer_publishers = {name: self.create_publisher(
             OccupancyGrid, f'/seven_layer_costmap/layers/{name}', 1)
             for name in ('lanelet', 'static_obstacle', 'spatio_temporal_voxel',
                          'prediction', 'inflation', 'traffic_regulation')}
@@ -228,7 +228,7 @@ class ThreeZedPerceptionNode(Node):
             self._occupancy, self._tracker, pose, stamp_s, sensor_origins,
             inflation_radius)
         for name, grid in layers.items():
-            self._publishers[name].publish(self._grid_message(grid, stamp_s))
+            self._layer_publishers[name].publish(self._grid_message(grid, stamp_s))
         self._accepted_sets += 1
         self._publish_health(DiagnosticStatus.OK, 'ACTIVE', len(points), started,
                              inflation_radius)
