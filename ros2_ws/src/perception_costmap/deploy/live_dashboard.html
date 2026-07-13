@@ -83,9 +83,12 @@
 // MJPEG <img> streams die silently when web_video_server restarts or a
 // phone backgrounds the tab -- re-arm them with a cache-buster.
 function bump(img) {
-  var u = new URL(img.dataset.src, location.href);
-  u.searchParams.set('t', Date.now());
-  img.src = u.href;
+  // Plain string concat, NOT the URL/URLSearchParams API: the topic query
+  // param contains literal '/' (e.g. topic=/viz/fused_bev), and reserializing
+  // through URLSearchParams percent-encodes it to %2F, which web_video_server
+  // fails to resolve (stream hangs forever, image stays blank/black).
+  var sep = img.dataset.src.indexOf('?') === -1 ? '?' : '&';
+  img.src = img.dataset.src + sep + 't=' + Date.now();
 }
 document.querySelectorAll('img[data-src]').forEach(function (img) {
   img.addEventListener('error', function () { setTimeout(function () { bump(img); }, 3000); });
