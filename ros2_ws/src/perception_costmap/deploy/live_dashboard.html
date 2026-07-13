@@ -26,6 +26,8 @@
   @media (max-width: 800px) { .row.hero, .row.cams { grid-template-columns: 1fr; } }
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
   .card img { display: block; width: 100%; height: auto; }
+  .row.hero .card img { height: 300px; object-fit: contain; background: #05070a; }
+  .row.cams .card img { height: 180px; object-fit: contain; background: #05070a; }
   .label { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
            padding: 7px 9px; border-bottom: 1px solid var(--border);
            display: flex; justify-content: space-between; }
