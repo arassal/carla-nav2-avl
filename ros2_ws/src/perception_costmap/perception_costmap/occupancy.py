@@ -131,6 +131,51 @@ DEFAULT_ROAD_EDGE_RADIUS = 1.5
 DEFAULT_ROAD_EDGE_SCALING = 2.0
 
 
+def infill_unknown(cost: np.ndarray, known_mask: np.ndarray,
+                   resolution: float, prior: float = 25.0,
+                   falloff_m: float = 2.0) -> np.ndarray:
+    """
+    Guess costs for unobserved cells from the surrounding observed ground.
+
+    Telea inpainting propagates the observed cost field into the blind
+    region (camera seams, the rear wedge), then the guess is blended back
+    toward ``prior`` as distance from the nearest observed cell grows:
+
+        guess(d) = w * inpainted + (1 - w) * prior,   w = exp(-d / falloff_m)
+
+    Right at a seam the guess is dominated by what surrounds it (road on
+    both sides of a seam -> the seam is probably road); deep inside the
+    rear wedge, where nothing nearby has been seen for metres, w -> 0 and
+    the guess honestly degrades to the neutral prior instead of smearing a
+    distant observation across ground we know nothing about.
+
+    Returns a float array; caller combines it into the cost field. Only
+    unknown cells are guessed -- observed cells pass through untouched.
+    """
+    unknown = ~known_mask.astype(bool)
+    if not unknown.any() or known_mask.sum() == 0:
+        return cost
+
+    src_img = np.clip(cost, 0, LETHAL).astype(np.uint8)
+    inpainted = cv2.inpaint(src_img, unknown.astype(np.uint8), 3,
+                            cv2.INPAINT_TELEA).astype(np.float64)
+
+    dist_m = cv2.distanceTransform(unknown.astype(np.uint8),
+                                   cv2.DIST_L2, 5) * resolution
+    w = np.exp(-dist_m / max(falloff_m, 1e-6))
+
+    out = cost.copy()
+    guess = w * inpainted + (1.0 - w) * float(prior)
+    # Preserve obstacle-halo bleed, but NOT the unknown_cost baseline: blind
+    # cells all start at exactly `prior`, and clamping the guess against that
+    # would forbid ever guessing anything better than the prior (a road seam
+    # would stay 25 instead of ~0). Only cost strictly above the prior in a
+    # blind cell can have come from a halo -- keep that as a floor.
+    halo_floor = np.where(cost > float(prior), cost, 0.0)
+    out[unknown] = np.maximum(halo_floor[unknown], guess[unknown])
+    return out
+
+
 def build_cost_array(grid: GridSpec,
                      road_mask: np.ndarray,
                      obstacle_mask: np.ndarray,
@@ -141,7 +186,9 @@ def build_cost_array(grid: GridSpec,
                      unknown_cost: int = UNKNOWN,
                      obstacle_layers: dict = None,
                      road_edge_radius: float = 0.0,
-                     road_edge_scaling: float = DEFAULT_ROAD_EDGE_SCALING) -> np.ndarray:
+                     road_edge_scaling: float = DEFAULT_ROAD_EDGE_SCALING,
+                     unknown_infill: bool = False,
+                     infill_falloff: float = 2.0) -> np.ndarray:
     """
     Fuse grid-space boolean masks into an int8 cost array (height, width).
 
@@ -211,6 +258,14 @@ def build_cost_array(grid: GridSpec,
         cost = np.maximum(cost, inflate_costs(
             obstacle_mask, grid.resolution,
             inflation_radius, cost_scaling_factor))
+
+    # Blind-spot infill: guess unobserved cells from the surrounding observed
+    # ground (see infill_unknown). Runs after the halos so a real obstacle's
+    # bleed into the blind region is preserved, before the lethal pin.
+    if unknown_infill and unknown_cost >= 0:
+        cost = infill_unknown(cost, known_mask, grid.resolution,
+                              prior=float(unknown_cost),
+                              falloff_m=infill_falloff)
 
     cost[obstacle_mask.astype(bool)] = LETHAL   # obstacle cells: exact lethal
     return np.clip(cost, -1, LETHAL).astype(np.int8)

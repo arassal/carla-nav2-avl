@@ -129,6 +129,10 @@ class CostmapNode(Node):
             # leaving the road, instead of a flat step at the boundary
             ("road_edge_radius", 1.5),
             ("road_edge_scaling", 2.0),
+            # blind-spot infill: guess unobserved cells from surrounding
+            # observed ground, degrading to unknown_cost with distance
+            ("unknown_infill", True),
+            ("infill_falloff", 2.0),
             # per-class danger zones (radius m, exponential decay rate)
             ("person_radius", 2.5),
             ("person_scaling", 1.5),
@@ -161,6 +165,8 @@ class CostmapNode(Node):
         self.unknown_cost = g["unknown_cost"]
         self.road_edge_radius = g["road_edge_radius"]
         self.road_edge_scaling = g["road_edge_scaling"]
+        self.unknown_infill = g["unknown_infill"]
+        self.infill_falloff = g["infill_falloff"]
         self.obstacle_classes = {
             "person":  dict(radius=g["person_radius"],  scaling=g["person_scaling"]),
             "vehicle": dict(radius=g["vehicle_radius"], scaling=g["vehicle_scaling"]),
@@ -340,7 +346,9 @@ class CostmapNode(Node):
             unknown_cost=self.unknown_cost,
             obstacle_layers=layers,
             road_edge_radius=self.road_edge_radius,
-            road_edge_scaling=self.road_edge_scaling)
+            road_edge_scaling=self.road_edge_scaling,
+            unknown_infill=self.unknown_infill,
+            infill_falloff=self.infill_falloff)
         stamp = self.get_clock().now().to_msg()
         msg = to_occupancy_grid_msg(cost, self.grid, stamp=stamp)
         self.costmap_pub.publish(msg)

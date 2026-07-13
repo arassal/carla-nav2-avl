@@ -83,9 +83,13 @@ class CostmapRGB(Node):
 
         grid = np.array(msg.data, np.int16).reshape(h, w)
         rgb = self.lut[np.clip(grid, 0, 100).astype(np.uint8)]
-        # grid < 0 is ROS's real "unknown"; this stack emits unknown_cost
-        # instead, but honour it if that ever changes.
-        rgb[(~self.known) | (grid < 0)] = UNKNOWN_RGB
+        # Blind cells now carry an infilled GUESS (see occupancy.infill_unknown),
+        # so render them in the guessed colour but dimmed to ~40% -- visibly
+        # "we think this, but nothing has seen it". grid < 0 (true ROS unknown,
+        # not emitted by this stack) stays black.
+        guessed = ~self.known
+        rgb[guessed] = (rgb[guessed].astype(np.float32) * 0.4).astype(np.uint8)
+        rgb[grid < 0] = UNKNOWN_RGB
 
         res = msg.info.resolution
         xs = msg.info.origin.position.x + (np.arange(w) + 0.5) * res

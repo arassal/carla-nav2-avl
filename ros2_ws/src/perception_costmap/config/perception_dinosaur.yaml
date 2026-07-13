@@ -102,6 +102,14 @@ perception_costmap:
     road_edge_radius: 1.5
     road_edge_scaling: 2.0
 
+    # Blind-spot infill: unknown cells are guessed from the surrounding
+    # observed ground (Telea inpainting), blended back toward unknown_cost as
+    # distance from the nearest observation grows (exp falloff, metres). A
+    # camera seam surrounded by road reads as road; the deep rear wedge
+    # honestly degrades to the neutral prior.
+    unknown_infill: true
+    infill_falloff: 2.0
+
     # Per-class danger zones. Bigger radius + SMALLER scaling = cost stays high
     # further out. People get a wide, slowly-decaying berth; cars decay fast
     # because driving within a metre of a parked car is normal, not an error.
