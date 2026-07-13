@@ -121,3 +121,22 @@ angles and ranges only after calibrating the physical camera fields of view.
   validated replacements for production use.
 - A clean end-to-end acceptance run with the sample SVO2 files must still be
   recorded after ensuring playback does not conflict with live vehicle wrappers.
+
+## Validation recorded on 2026-07-13
+
+- 38 dependency-light tests passed on Windows and on the target Jetson.
+- ROS 2 Humble built package version 0.6.0 on the target Jetson.
+- `verification.launch.py` published all seven layers and the fused map.
+- `offline_pipeline.launch.py` reported `ACTIVE` through the same RGB, depth,
+  calibration, odometry, and visibility callbacks used by SVO playback.
+- `ZED_SVO_Editor` validated all three sample recordings against the manifest.
+- A single front recording opened in ZED SDK 5.2.0 and advertised the expected
+  RGB, registered-depth, calibration, and odometry topics through completion.
+
+A concurrent three-SVO acceptance result is intentionally not claimed. During
+the attempted run, the vehicle machine was already operating three live ZED SDK
+instances, the older perception stack, Velodyne drivers, and RViz. The additional
+three playback instances did not all load under that resource contention. Repeat
+the acceptance run on a stationary vehicle after stopping the conflicting live
+camera stack through its normal supervisor; ROS-domain isolation prevents topic
+collisions but does not free GPU/CPU resources.
