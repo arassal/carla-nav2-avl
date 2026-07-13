@@ -2,7 +2,7 @@
 
 ## Recommended: start everything once
 
-Inside the `ubuntu` distrobox:
+Inside the `ubuntu`:
 
 ```zsh
 cd ~/Projects/carla-nav2-avl
