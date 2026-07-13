@@ -21,6 +21,141 @@ class CameraSample:
     stamp_s: float
 
 
+@dataclass(frozen=True)
+class Pose2D:
+    x: float = 0.0
+    y: float = 0.0
+    yaw: float = 0.0
+
+
+def base_to_world(points, pose: Pose2D):
+    pts = np.asarray(points, dtype=np.float32).reshape(-1, 3)
+    c, s = math.cos(pose.yaw), math.sin(pose.yaw)
+    result = pts.copy()
+    result[:, 0] = pose.x + c * pts[:, 0] - s * pts[:, 1]
+    result[:, 1] = pose.y + s * pts[:, 0] + c * pts[:, 1]
+    return result
+
+
+def world_to_base(points, pose: Pose2D):
+    pts = np.asarray(points, dtype=np.float32).reshape(-1, 3)
+    dx, dy = pts[:, 0] - pose.x, pts[:, 1] - pose.y
+    c, s = math.cos(pose.yaw), math.sin(pose.yaw)
+    result = pts.copy()
+    result[:, 0] = c * dx + s * dy
+    result[:, 1] = -s * dx + c * dy
+    return result
+
+
+def _line_cells(start, end):
+    """Integer Bresenham cells including start and end."""
+    x0, y0 = start
+    x1, y1 = end
+    dx, sx = abs(x1 - x0), 1 if x0 < x1 else -1
+    dy, sy = -abs(y1 - y0), 1 if y0 < y1 else -1
+    error = dx + dy
+    cells = []
+    while True:
+        cells.append((x0, y0))
+        if x0 == x1 and y0 == y1:
+            return cells
+        twice = 2 * error
+        if twice >= dy:
+            error += dy
+            x0 += sx
+        if twice <= dx:
+            error += dx
+            y0 += sy
+
+
+class WorldOccupancyModel:
+    """Sparse world-frame voxel history projected into a rolling vehicle grid."""
+
+    def __init__(self, spec: GridSpec, persistence_s=2.0, voxel_m=0.20,
+                 z_resolution=0.25, static_hits=8, max_voxels=750000):
+        self.spec = spec
+        self.persistence_s = persistence_s
+        self.voxel_m = voxel_m
+        self.z_resolution = z_resolution
+        self.static_hits = static_hits
+        self.max_voxels = max_voxels
+        self.last_seen = {}
+        self.hit_score = {}
+
+    def _key(self, point):
+        return (math.floor(point[0] / self.voxel_m),
+                math.floor(point[1] / self.voxel_m),
+                math.floor(point[2] / self.z_resolution))
+
+    def observe(self, base_points, pose: Pose2D, sensor_origins_base, stamp_s):
+        points = np.asarray(base_points, dtype=np.float32).reshape(-1, 3)
+        if not len(points):
+            self.prune(stamp_s)
+            return
+        world = base_to_world(points, pose)
+        origins_world = base_to_world(np.asarray(sensor_origins_base).reshape(-1, 3), pose)
+        # Clear only a sampled subset of rays to bound Python cost.
+        sample_step = max(1, len(world) // 500)
+        for index in range(0, len(world), sample_step):
+            endpoint = world[index]
+            origin = origins_world[index % len(origins_world)]
+            start_xy = (math.floor(origin[0] / self.voxel_m),
+                        math.floor(origin[1] / self.voxel_m))
+            end_xy = (math.floor(endpoint[0] / self.voxel_m),
+                      math.floor(endpoint[1] / self.voxel_m))
+            clear_xy = set(_line_cells(start_xy, end_xy)[:-1])
+            if clear_xy:
+                for cell_x, cell_y in clear_xy:
+                    for cell_z in range(-16, 17):
+                        key = (cell_x, cell_y, cell_z)
+                        self.last_seen.pop(key, None)
+                        self.hit_score.pop(key, None)
+        observed = set()
+        for point in world:
+            key = self._key(point)
+            self.last_seen[key] = stamp_s
+            observed.add(key)
+        for key in list(self.hit_score):
+            if key not in observed:
+                self.hit_score[key] = max(0, self.hit_score[key] - 1)
+                if self.hit_score[key] == 0:
+                    self.hit_score.pop(key, None)
+        for key in observed:
+            self.hit_score[key] = min(self.static_hits * 2, self.hit_score.get(key, 0) + 2)
+        self.prune(stamp_s)
+
+    def prune(self, stamp_s):
+        expired = [key for key, seen in self.last_seen.items()
+                   if stamp_s - seen > self.persistence_s]
+        for key in expired:
+            self.last_seen.pop(key, None)
+        if len(self.last_seen) > self.max_voxels:
+            oldest = sorted(self.last_seen, key=self.last_seen.get)[:len(self.last_seen)-self.max_voxels]
+            for key in oldest:
+                self.last_seen.pop(key, None)
+                self.hit_score.pop(key, None)
+
+    def project(self, pose: Pose2D, stamp_s):
+        self.prune(stamp_s)
+        transient = np.zeros(self.spec.shape, dtype=np.uint8)
+        static = np.zeros(self.spec.shape, dtype=np.uint8)
+        if not self.last_seen:
+            return static, transient
+        keys = list(self.last_seen)
+        world = np.array([((x + 0.5) * self.voxel_m,
+                           (y + 0.5) * self.voxel_m,
+                           (z + 0.5) * self.z_resolution) for x, y, z in keys])
+        base = world_to_base(world, pose)
+        cols = ((base[:, 0] + self.spec.width_m / 2) / self.spec.resolution).astype(int)
+        rows = ((base[:, 1] + self.spec.height_m / 2) / self.spec.resolution).astype(int)
+        valid = ((cols >= 0) & (cols < self.spec.shape[1]) &
+                 (rows >= 0) & (rows < self.spec.shape[0]))
+        for index in np.flatnonzero(valid):
+            target = static if self.hit_score.get(keys[index], 0) >= self.static_hits else transient
+            target[rows[index], cols[index]] = 100
+        return static, transient
+
+
 class ThreeCameraSynchronizer:
     """Latest-sample synchronizer that never reuses a set or accepts excess skew."""
 
@@ -195,16 +330,16 @@ def traffic_regulation_layer(spec: GridSpec, images, stop_distance_m=8.0):
     return grid
 
 
-def derive_layers(spec, points, front_bgr, all_images, separator, tracker, voxel_grid, stamp_s,
+def derive_layers(spec, points, front_bgr, all_images, occupancy_model, tracker, pose, stamp_s,
+                  sensor_origins_base,
                   inflation_radius_m=2.5):
     obstacle_points = remove_ground(points)
-    occupied = obstacle_grid(spec, obstacle_points)
-    static, transient = separator.update(occupied)
     obstacle_points = obstacle_points[(obstacle_points[:, 2] >= -1.5) &
                                       (obstacle_points[:, 2] <= 2.8)]
-    voxel_grid.observe(obstacle_points, stamp_s)
-    temporal = voxel_grid.project(stamp_s)
-    centroids = connected_centroids(transient, spec)
+    occupancy_model.observe(obstacle_points, pose, sensor_origins_base, stamp_s)
+    static, temporal = occupancy_model.project(pose, stamp_s)
+    current = obstacle_grid(spec, obstacle_points)
+    centroids = connected_centroids(current, spec)
     tracks = tracker.update(centroids, stamp_s)
     prediction = rasterize_predictions(spec, tracks)
     combined = np.maximum.reduce((static, temporal, prediction))

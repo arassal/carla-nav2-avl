@@ -29,6 +29,13 @@ Stereolabs documents SVO replay as a single-file wrapper operation, so this laun
 uses three wrapper instances. It deliberately disables their TF/map publication;
 the vehicle rig transforms are owned by this project and must be calibrated.
 
+The front wrapper's visual-inertial odometry is required. Observations are stored
+as sparse world-frame voxels and projected back into a rolling vehicle-centered
+grid. This prevents stationary obstacles from smearing when the vehicle moves or
+turns. Sampled depth rays clear previously occupied free space, while unobserved
+voxels expire after `voxel_persistence_s`. A configurable rectangular ego mask
+rejects visible vehicle-body returns before occupancy processing.
+
 ## Layer contract
 
 | Layer | Purpose | Milestone input | Vehicle input required later |
@@ -70,6 +77,24 @@ copy it into the workspace, because maintaining two package copies invites drift
 `verification.launch.py` publishes all seven deterministic layers and requires no
 CARLA or ZED hardware. `three_svo_costmap.launch.py` is the real input path.
 `milestone_demo.launch.py` remains a CARLA/live-image wiring harness.
+
+For a stronger hardware-free check, run the actual perception pipeline against
+synthetic ZED-compatible RGB, registered depth, calibration, and odometry topics:
+
+```bash
+ros2 launch seven_layer_costmap offline_pipeline.launch.py
+ros2 topic echo /seven_layer_costmap/perception_status
+ros2 topic hz /seven_layer_costmap/costmap
+```
+
+Unlike `verification.launch.py`, this does not publish prebuilt layer grids. It
+drives the same image/depth/odometry callbacks used by three-SVO playback.
+
+`config/nav2_consumer.yaml` provides an experimental Nav2 Humble `StaticLayer`
+consumer for the fused topic and a provisional rectangular vehicle footprint.
+This integration cannot be runtime-validated in the current Windows workspace;
+verify frame transforms, rolling-map behavior, lifecycle transitions, and planner
+response on the target Ubuntu/ROS installation before enabling vehicle control.
 
 ## CARLA milestone procedure
 
@@ -127,6 +152,9 @@ Before accepting an SVO run, also verify:
 - `/seven_layer_costmap/perception_status` stays `ACTIVE` with acceptable skew.
 - Registered depth uses `32FC1` meters and each `CameraInfo` is nonzero.
 - Point-cloud overlays align after replacing provisional mount transforms.
+- ZED odometry remains synchronized with image/depth timestamps and does not jump.
+- The ego exclusion rectangle masks only vehicle bodywork, not nearby obstacles.
+- A newly visible clear ray removes a disappeared obstacle without waiting for expiry.
 - Stopping any one wrapper causes the fused map to stop within one second.
 - CPU/GPU load sustains the configured publication rate without skipped frames.
 

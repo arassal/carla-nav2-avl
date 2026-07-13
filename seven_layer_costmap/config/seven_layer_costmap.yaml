@@ -44,6 +44,10 @@ three_zed_perception:
     frame_id: base_link
     inflation_radius_m: 2.5
     voxel_persistence_s: 2.0
+    require_odometry: true
+    ego_min_x: -2.5
+    ego_max_x: 0.8
+    ego_half_width: 1.2
     mounts:
       front:
         translation: [0.679450, 0.0, -0.107950]

@@ -12,4 +12,6 @@
       depth_mode: NEURAL_LIGHT
       point_cloud_freq: 0.0
     pos_tracking:
-      pos_tracking_enabled: false
+      pos_tracking_enabled: true
+      publish_tf: false
+      publish_map_tf: false

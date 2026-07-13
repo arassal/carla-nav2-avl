@@ -4,9 +4,9 @@ import numpy as np
 
 from seven_layer_costmap.core import GridSpec
 from seven_layer_costmap.perception import (
-    CameraSample, PersistenceSeparator, ThreeCameraSynchronizer,
+    CameraSample, PersistenceSeparator, Pose2D, ThreeCameraSynchronizer,
     depth_to_base_points, obstacle_grid, traffic_regulation_layer,
-    remove_ground, vision_lane_layer,
+    remove_ground, vision_lane_layer, WorldOccupancyModel,
 )
 
 
@@ -71,6 +71,25 @@ class PerceptionTests(unittest.TestCase):
         image[:10, :2, 2] = 255
         layer = traffic_regulation_layer(spec, [image])
         self.assertEqual(layer.max(), 100)
+
+    def test_world_occupancy_compensates_vehicle_translation(self):
+        spec = GridSpec(20, 20, 1)
+        model = WorldOccupancyModel(spec, voxel_m=1.0, z_resolution=1.0)
+        model.observe([[5.0, 0.0, 0.0]], Pose2D(), [[0.0, 0.0, 0.0]], 1.0)
+        _, before = model.project(Pose2D(), 1.0)
+        _, after = model.project(Pose2D(x=2.0), 1.1)
+        self.assertEqual(before[10, 15], 100)
+        self.assertEqual(after[10, 13], 100)
+
+    def test_world_occupancy_ray_clears_old_obstacle(self):
+        spec = GridSpec(30, 30, 1)
+        model = WorldOccupancyModel(spec, voxel_m=1.0, z_resolution=1.0)
+        model.observe([[5.0, 0.0, 0.0]], Pose2D(), [[0.0, 0.0, 0.0]], 1.0)
+        model.observe([[10.0, 0.0, 0.0]], Pose2D(), [[0.0, 0.0, 0.0]], 1.1)
+        static, transient = model.project(Pose2D(), 1.1)
+        merged = np.maximum(static, transient)
+        self.assertEqual(merged[15, 20], 0)
+        self.assertEqual(merged[15, 25], 100)
 
 
 if __name__ == '__main__':
