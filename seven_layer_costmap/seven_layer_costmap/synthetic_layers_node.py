@@ -47,8 +47,9 @@ class SyntheticLayersNode(Node):
         h, w = spec.shape
         layers = {name: np.zeros(spec.shape, dtype=np.uint8) for name in self._pubs}
         # A low-cost lane departure field with a 6 m center corridor.
-        layers['lanelet'][:, :w // 2 - 15] = 80
-        layers['lanelet'][:, w // 2 + 15:] = 80
+        layers['lanelet'][:h // 2 - 15, w // 2:] = 80
+        layers['lanelet'][h // 2 + 15:, w // 2:] = 80
+        layers['lanelet'][:, :w // 2] = 95
         # Static wall and transient obstacle samples for end-to-end validation.
         layers['static_obstacle'][h // 2 + 45:h // 2 + 50, w // 2 - 20:w // 2 + 20] = 100
         layers['spatio_temporal_voxel'][h // 2 + 20:h // 2 + 25, w // 2 + 10:w // 2 + 15] = 100
@@ -57,7 +58,7 @@ class SyntheticLayersNode(Node):
         layers['inflation'] = inflate(obstacle_union, 2.5, spec.resolution, 1.2)
         layers['traffic_regulation'][h // 2 + 70:h // 2 + 73, w // 2 - 15:w // 2 + 15] = 100
         if 'road_condition' in layers:
-            layers['road_condition'][h // 2:, :] = 20
+            layers['road_condition'][:, w // 2:] = 20
         for name, publisher in self._pubs.items():
             publisher.publish(self._message(layers[name]))
 

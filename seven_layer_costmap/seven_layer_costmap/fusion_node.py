@@ -23,14 +23,16 @@ class FusionNode(Node):
         self._messages = {}
         self._received_s = {}
         self._lock = threading.Lock()
-        qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
-                         durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        input_qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
+                               durability=DurabilityPolicy.VOLATILE)
+        output_qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
+                                durability=DurabilityPolicy.TRANSIENT_LOCAL)
         for name in LAYER_NAMES:
             topic = f'/seven_layer_costmap/layers/{name}'
             self.create_subscription(OccupancyGrid, topic,
-                                     lambda msg, n=name: self._receive(n, msg), qos)
+                                     lambda msg, n=name: self._receive(n, msg), input_qos)
         self._publisher = self.create_publisher(
-            OccupancyGrid, self.get_parameter('output_topic').value, qos)
+            OccupancyGrid, self.get_parameter('output_topic').value, output_qos)
         hz = float(self.get_parameter('publish_frequency').value)
         self.create_timer(1.0 / hz, self._publish)
         self.get_logger().info('Waiting for seven costmap layers: ' + ', '.join(LAYER_NAMES))

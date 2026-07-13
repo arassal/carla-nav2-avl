@@ -1,0 +1,77 @@
+import unittest
+
+import numpy as np
+
+from seven_layer_costmap.core import GridSpec
+from seven_layer_costmap.perception import (
+    CameraSample, PersistenceSeparator, ThreeCameraSynchronizer,
+    depth_to_base_points, obstacle_grid, traffic_regulation_layer,
+    remove_ground, vision_lane_layer,
+)
+
+
+def sample(stamp):
+    return CameraSample(np.ones((2, 2)), np.zeros((2, 2, 3), dtype=np.uint8),
+                        np.eye(3), stamp)
+
+
+class PerceptionTests(unittest.TestCase):
+    def test_three_camera_sync_accepts_bounded_skew_once(self):
+        sync = ThreeCameraSynchronizer(max_skew_s=0.05)
+        sync.update('front', sample(10.00))
+        sync.update('left', sample(10.02))
+        sync.update('right', sample(10.04))
+        self.assertIsNotNone(sync.take())
+        self.assertIsNone(sync.take())
+
+    def test_three_camera_sync_rejects_excess_skew(self):
+        sync = ThreeCameraSynchronizer(max_skew_s=0.05)
+        sync.update('front', sample(10.00))
+        sync.update('left', sample(10.02))
+        sync.update('right', sample(10.20))
+        self.assertIsNone(sync.take())
+
+    def test_depth_backprojection_optical_to_base(self):
+        depth = np.array([[2.0]], dtype=np.float32)
+        k = np.array([[1.0, 0, 0], [0, 1.0, 0], [0, 0, 1.0]])
+        point = depth_to_base_points(depth, k, [1.0, 2.0, 3.0], stride=1)[0]
+        np.testing.assert_allclose(point, [3.0, 2.0, 3.0])
+
+    def test_obstacle_height_filter(self):
+        spec = GridSpec(10, 10, 1)
+        grid = obstacle_grid(spec, [[1, 1, -2.0], [2, 1, 1.0]])
+        self.assertEqual(int((grid == 100).sum()), 1)
+
+    def test_dominant_ground_band_is_removed(self):
+        ground = np.column_stack((np.arange(100), np.zeros(100), np.full(100, -1.0)))
+        obstacle = np.array([[2.0, 0.0, 0.2]])
+        result = remove_ground(np.vstack((ground, obstacle)))
+        self.assertEqual(len(result), 1)
+        self.assertAlmostEqual(float(result[0, 2]), 0.2)
+
+    def test_persistence_separates_static(self):
+        separator = PersistenceSeparator((3, 3), static_hits=3, decay=0)
+        occupied = np.zeros((3, 3), dtype=np.uint8)
+        occupied[1, 1] = 100
+        separator.update(occupied)
+        static, transient = separator.update(occupied)
+        self.assertEqual(static[1, 1], 100)
+        self.assertEqual(transient[1, 1], 0)
+
+    def test_lane_layer_has_forward_low_cost_corridor(self):
+        spec = GridSpec(20, 20, 1)
+        image = np.zeros((20, 20, 3), dtype=np.uint8)
+        layer = vision_lane_layer(spec, image)
+        self.assertEqual(layer[10, 12], 0)
+        self.assertGreater(layer[2, 12], 0)
+
+    def test_red_signal_adds_stop_barrier(self):
+        spec = GridSpec(20, 20, 1)
+        image = np.zeros((20, 20, 3), dtype=np.uint8)
+        image[:10, :2, 2] = 255
+        layer = traffic_regulation_layer(spec, [image])
+        self.assertEqual(layer.max(), 100)
+
+
+if __name__ == '__main__':
+    unittest.main()

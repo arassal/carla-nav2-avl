@@ -6,17 +6,40 @@ three-ZED-X/SVO-ready prototype. It publishes one active fused `nav_msgs/Occupan
 `/seven_layer_costmap/costmap` and keeps all seven contributing grids visible at
 `/seven_layer_costmap/layers/<layer_name>`.
 
+## Three-SVO pipeline
+
+The production-intent launch accepts exactly three absolute SVO paths and starts
+one namespaced ZED wrapper for each recording:
+
+```bash
+ros2 launch seven_layer_costmap three_svo_costmap.launch.py \
+  front_svo:=/data/front.svo2 \
+  left_svo:=/data/left.svo2 \
+  right_svo:=/data/right.svo2
+```
+
+The wrappers publish rectified RGB, registered metric depth, and camera
+calibration. `three_zed_perception` accepts a set only when all three cameras have
+advanced and their SVO timestamps are within `max_camera_skew_s` (50 ms by
+default). A missing, stale, or misaligned camera stops the six perception-layer
+updates; the fail-closed fusion node then stops the master map after its stale
+timeout. Status is available on `/seven_layer_costmap/perception_status`.
+
+Stereolabs documents SVO replay as a single-file wrapper operation, so this launch
+uses three wrapper instances. It deliberately disables their TF/map publication;
+the vehicle rig transforms are owned by this project and must be calibrated.
+
 ## Layer contract
 
 | Layer | Purpose | Milestone input | Vehicle input required later |
 |---|---|---|---|
-| lanelet | penalize off-lane space | deterministic test corridor | Lanelet2/OpenDRIVE rasterizer |
-| static obstacle | persistent mapped geometry | deterministic test wall | map/static perception |
-| spatio-temporal voxel | recent 3-D occupancy with decay | deterministic test obstacle; core voxel algorithm included | fused ZED depth point clouds |
-| prediction | future dynamic occupancy | constant-velocity test track; core rasterizer included | timestamped tracked objects |
-| inflation | vehicle clearance | generated from test obstacles | Nav2 or included inflation algorithm |
-| traffic regulation | stop lines/no-entry/speed restrictions | deterministic stop line | CARLA/Lanelet2 signals and rules |
-| road condition | traction/visibility penalty | CARLA/ZED RGB heuristic | trained and safety-validated camera model |
+| lanelet | penalize locally non-drivable space | front-image marking estimate and conservative corridor | trained lane/drivable segmentation for production |
+| static obstacle | persistent geometry | repeated fused depth occupancy | semantic static/dynamic classification |
+| spatio-temporal voxel | recent 3-D occupancy with decay | fused ZED depth with 2 s persistence | tune marking/ray-clearing on SVO data |
+| prediction | future dynamic occupancy | depth-component centroid tracking and constant velocity | multi-object semantic tracker and lane-aware predictor |
+| inflation | vehicle clearance | union of static, voxel, and prediction layers | validated vehicle footprint and speed-dependent margins |
+| traffic regulation | temporary stop restrictions | conservative red-pixel signal gate | trained traffic-light/sign/road-marking detector |
+| road condition | traction/visibility penalty | three-camera RGB heuristic | trained and safety-validated road/weather model |
 
 The fusion node uses weighted maximum cost. With the default fail-closed setting,
 it does not publish if any of the seven layers is absent, stale, or uses different
@@ -45,9 +68,8 @@ Alternatively, create a development symlink at
 copy it into the workspace, because maintaining two package copies invites drift.
 
 `verification.launch.py` publishes all seven deterministic layers and requires no
-CARLA or ZED hardware. `milestone_demo.launch.py` replaces only the road-condition
-test layer with live images. Start CARLA camera publishers first, or remap the
-three image topics in `config/seven_layer_costmap.yaml`.
+CARLA or ZED hardware. `three_svo_costmap.launch.py` is the real input path.
+`milestone_demo.launch.py` remains a CARLA/live-image wiring harness.
 
 ## CARLA milestone procedure
 
@@ -64,14 +86,21 @@ verification. It uses lower-image brightness, contrast, and channel spread to
 classify `dry`, `wet`, `low_visibility`, or `snow_or_glare`. It is not a learned
 model and must not be treated as vehicle-safe perception.
 
-## Future SVO integration
+## What can and cannot be inferred from only three SVO files
 
-Run one namespaced `zed_wrapper` instance per SVO and remap its RGB/depth/camera
-info output to the same three topic prefixes. The costmap code should not need to
-change. Playback must use a shared timestamp/clock; if recordings are not hardware
-synchronized, align them before fusion and reject frames exceeding the configured
-skew. Camera intrinsics come from each SVO; extrinsics come from
-`camera_mounts.yaml` after physical validation.
+Camera intrinsics and synchronized stereo depth are available through each ZED
+wrapper. This package derives a **local, rolling perception costmap** from those
+data. With no Lanelet2/OpenDRIVE/GNSS input, it cannot create a globally referenced
+HD-map lanelet layer or recover regulations that are not visible in the videos.
+The layer named `lanelet` is therefore a local vision-derived drivable-lane proxy.
+The traffic layer handles visible red signals only in the dependency-free
+baseline. Signs, arrows, speed limits, yield rules, and occluded signals require a
+trained detector and suitable labeled data.
+
+The baseline algorithms intentionally avoid downloading model weights at runtime.
+They make the complete dataflow executable and testable, but lane estimation,
+red-light detection, road conditions, object identity, and prediction are not
+vehicle-ready until replaced or validated with appropriate models and recordings.
 
 ## Calibration assumptions requiring confirmation
 
@@ -83,7 +112,7 @@ roll/pitch/yaw measurements were supplied; nominal outward-facing yaw values are
 simulation placeholders. Do not deploy these transforms on a vehicle until they
 are measured and validated with TF/point-cloud overlays.
 
-## Definition of milestone-one completion
+## Preflight and acceptance checks
 
 - All seven topics update at the requested rate with identical geometry/frame.
 - The master stops within one stale timeout when any producer is stopped.
@@ -92,5 +121,15 @@ are measured and validated with TF/point-cloud overlays.
 - Unit tests pass, followed by a ROS launch smoke test on Humble.
 - CARLA scenario evidence is recorded before claiming integration verification.
 
-No `.svo` recordings are required for this milestone. Real SVO playback, learned
-road-condition inference, and vehicle deployment are explicitly later gates.
+Before accepting an SVO run, also verify:
+
+- All three paths are absolute and each wrapper reaches playback state.
+- `/seven_layer_costmap/perception_status` stays `ACTIVE` with acceptable skew.
+- Registered depth uses `32FC1` meters and each `CameraInfo` is nonzero.
+- Point-cloud overlays align after replacing provisional mount transforms.
+- Stopping any one wrapper causes the fused map to stop within one second.
+- CPU/GPU load sustains the configured publication rate without skipped frames.
+
+No `.svo` recordings are required for unit and synthetic integration testing. Real
+three-SVO playback, perception accuracy measurement, calibration, and vehicle
+deployment are explicitly separate acceptance gates.

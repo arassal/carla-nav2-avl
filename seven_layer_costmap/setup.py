@@ -5,7 +5,7 @@ package_name = 'seven_layer_costmap'
 
 setup(
     name=package_name,
-    version='0.1.0',
+    version='0.2.0',
     packages=find_packages(exclude=['test']),
     data_files=[
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
@@ -18,6 +18,7 @@ setup(
     entry_points={'console_scripts': [
         'costmap_fusion = seven_layer_costmap.fusion_node:main',
         'road_condition = seven_layer_costmap.road_condition_node:main',
+        'three_zed_perception = seven_layer_costmap.perception_node:main',
         'synthetic_layers = seven_layer_costmap.synthetic_layers_node:main',
     ]},
 )

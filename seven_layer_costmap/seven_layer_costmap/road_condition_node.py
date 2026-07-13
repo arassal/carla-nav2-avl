@@ -7,6 +7,7 @@ from cv_bridge import CvBridge
 from nav_msgs.msg import OccupancyGrid
 from rclpy.node import Node
 from sensor_msgs.msg import Image
+from rclpy.qos import qos_profile_sensor_data
 from std_msgs.msg import String
 
 from .core import GridSpec, infer_road_condition
@@ -28,7 +29,8 @@ class RoadConditionNode(Node):
         self._lock = threading.Lock()
         for topic in self.get_parameter('camera_topics').value:
             self.create_subscription(Image, topic,
-                                     lambda msg, t=topic: self._image(msg, t), 1)
+                                     lambda msg, t=topic: self._image(msg, t),
+                                     qos_profile_sensor_data)
         self._layer_pub = self.create_publisher(
             OccupancyGrid, '/seven_layer_costmap/layers/road_condition', 1)
         self._status_pub = self.create_publisher(String, '/road_condition/status', 10)
@@ -54,7 +56,7 @@ class RoadConditionNode(Node):
         condition, confidence, cost = max(results, key=lambda item: item[2])
         grid = np.zeros(spec.shape, dtype=np.int8)
         # Apply the inferred traction/visibility penalty only in the forward drivable half.
-        grid[spec.shape[0] // 2:, :] = cost
+        grid[:, spec.shape[1] // 2:] = cost
         msg = OccupancyGrid()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = self.get_parameter('frame_id').value
