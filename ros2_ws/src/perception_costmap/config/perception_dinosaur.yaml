@@ -110,6 +110,13 @@ perception_costmap:
     unknown_infill: true
     infill_falloff: 2.0
 
+    # Trim each camera's coverage 0.4 m inward at the FOV border. The
+    # outermost image pixels segment unreliably, so the ground strip at each
+    # coverage edge read "observed, not road" -> off-road 97 -> phantom red
+    # bands hugging every blind seam. Trimmed cells become unknown and the
+    # infill guesses them from their neighbourhood instead.
+    fov_edge_trim_m: 0.4
+
     # Per-class danger zones. Bigger radius + SMALLER scaling = cost stays high
     # further out. People get a wide, slowly-decaying berth; cars decay fast
     # because driving within a metre of a parked car is normal, not an error.

@@ -13,6 +13,7 @@ lifting lives in the ROS-free modules (segmentation, obstacles, bev,
 occupancy); this file is just the ROS plumbing.
 """
 
+import cv2
 import numpy as np
 
 import rclpy
@@ -31,8 +32,9 @@ class CameraSource:
     """One camera: its subscriptions, latest frame, homography and FOV mask.
     All parameters live under '<name>.' so a 3-camera car is 3 YAML blocks."""
 
-    def __init__(self, node, name, grid):
+    def __init__(self, node, name, grid, fov_edge_trim_m=0.4):
         self.name, self.grid = name, grid
+        self.fov_edge_trim_m = fov_edge_trim_m
         d = lambda key, val: node.declare_parameter("%s.%s" % (name, key), val).value
         self.ipm_mode = d("ipm_mode", "points")
         self.image_pts = np.array(d("ipm_image_pts",
@@ -72,7 +74,19 @@ class CameraSource:
         else:
             self.H = bev.homography_from_points(
                 self.image_pts, self.world_pts, self.grid)
-        self.known = bev.bev_known_mask(self.H, self.img.shape, self.grid)
+        known = bev.bev_known_mask(self.H, self.img.shape, self.grid)
+        # Trim the FOV border: segmentation is unreliable in the outermost
+        # image pixels, so the strip of BEV ground right at a camera's
+        # coverage edge kept classifying as "observed, not road" -> off-road
+        # 97 -> phantom red bands hugging every blind seam. Eroding the mask
+        # makes that strip UNKNOWN instead, and the blind-spot infill guesses
+        # it from its (usually drivable) neighbourhood.
+        trim_m = float(self.fov_edge_trim_m)
+        if trim_m > 0:
+            r = max(1, int(round(trim_m / self.grid.resolution)))
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2*r+1, 2*r+1))
+            known = cv2.erode(known.astype(np.uint8), kernel).astype(bool)
+        self.known = known
         return True
 
 
@@ -133,6 +147,10 @@ class CostmapNode(Node):
             # observed ground, degrading to unknown_cost with distance
             ("unknown_infill", True),
             ("infill_falloff", 2.0),
+            # trim each camera's BEV coverage inward: segmentation is junk at
+            # the image border, which painted phantom off-road bands along
+            # every blind-seam edge
+            ("fov_edge_trim_m", 0.4),
             # per-class danger zones (radius m, exponential decay rate)
             ("person_radius", 2.5),
             ("person_scaling", 1.5),
@@ -219,7 +237,9 @@ class CostmapNode(Node):
         self._latest_points = None   # (N,3) ndarray
         self._pts_stamp = None       # seconds, header stamp of latest lidar scan
 
-        self.cameras = [CameraSource(self, n, self.grid) for n in g["cameras"]]
+        self.cameras = [CameraSource(self, n, self.grid,
+                                     fov_edge_trim_m=g["fov_edge_trim_m"])
+                        for n in g["cameras"]]
 
         # ---- pub/sub ----
         self.costmap_pub = self.create_publisher(OccupancyGrid, g["costmap_topic"], 1)
