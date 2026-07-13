@@ -7,6 +7,11 @@ from typing import Dict, Optional
 
 import numpy as np
 
+try:
+    import cv2
+except ImportError:  # Unit-testable fallback for minimal environments.
+    cv2 = None
+
 from .core import GridSpec, TemporalVoxelGrid, inflate, rasterize_predictions
 
 
@@ -92,25 +97,41 @@ def observed_mask_from_rays(spec: GridSpec, points, sensor_origins_base,
 
     height, width = spec.shape
     step = max(1, math.ceil(len(pts) / int(max_rays)))
-    for index in range(0, len(pts), step):
-        origin, endpoint = origins[index], pts[index]
-        start = (int((origin[0] + spec.width_m / 2) / spec.resolution),
-                 int((origin[1] + spec.height_m / 2) / spec.resolution))
-        end = (int((endpoint[0] + spec.width_m / 2) / spec.resolution),
-               int((endpoint[1] + spec.height_m / 2) / spec.resolution))
-        for col, row in _line_cells(start, end):
-            if 0 <= row < height and 0 <= col < width:
-                observed[row, col] = True
+    selected = np.arange(0, len(pts), step, dtype=np.int64)
+    selected_points, selected_origins = pts[selected], origins[selected]
+    starts = np.column_stack((
+        np.floor((selected_origins[:, 0] + spec.width_m / 2) / spec.resolution),
+        np.floor((selected_origins[:, 1] + spec.height_m / 2) / spec.resolution),
+    )).astype(np.int32)
+    ends = np.column_stack((
+        np.floor((selected_points[:, 0] + spec.width_m / 2) / spec.resolution),
+        np.floor((selected_points[:, 1] + spec.height_m / 2) / spec.resolution),
+    )).astype(np.int32)
+    if cv2 is not None:
+        canvas = np.zeros(spec.shape, dtype=np.uint8)
+        segments = np.stack((starts, ends), axis=1)
+        cv2.polylines(canvas, segments, False, 1, 1, cv2.LINE_8)
+        observed = canvas.astype(bool)
+    else:
+        for start, end in zip(starts, ends):
+            for col, row in _line_cells(tuple(start), tuple(end)):
+                if 0 <= row < height and 0 <= col < width:
+                    observed[row, col] = True
 
     # Sparse ray sampling can leave one-cell pinholes at long range. A bounded
     # dilation closes only those sampling gaps; it does not bridge real camera
     # blind wedges, which are many cells wide.
-    for _ in range(int(dilation_cells)):
-        padded = np.pad(observed, 1, mode='constant')
-        observed = np.logical_or.reduce([
-            padded[row:row + height, col:col + width]
-            for row in range(3) for col in range(3)
-        ])
+    if cv2 is not None and dilation_cells:
+        size = 2 * int(dilation_cells) + 1
+        observed = cv2.dilate(observed.astype(np.uint8),
+                              np.ones((size, size), np.uint8)).astype(bool)
+    else:
+        for _ in range(int(dilation_cells)):
+            padded = np.pad(observed, 1, mode='constant')
+            observed = np.logical_or.reduce([
+                padded[row:row + height, col:col + width]
+                for row in range(3) for col in range(3)
+            ])
     return observed
 
 
