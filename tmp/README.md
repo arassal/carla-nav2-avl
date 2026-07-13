@@ -28,42 +28,6 @@ unchanged. The marker view applies a three-frame visual majority filter to
 reduce single-frame segmentation shimmer; it does not alter Nav2's original
 `/perception/costmap` data.
 
-## Start components separately
-
-Run each command in a separate terminal inside the `ubuntu` distrobox:
-
-```bash
-cd ~/Projects/carla-nav2-avl
-source /opt/ros/jazzy/setup.zsh
-source ros2_ws/install/setup.zsh
-python3 tmp/video_camera_publisher.py
-```
-
-```bash
-cd ~/Projects/carla-nav2-avl
-source /opt/ros/jazzy/setup.zsh
-source ros2_ws/install/setup.zsh
-ros2 run perception_costmap costmap_node --ros-args --params-file tmp/video_costmap.yaml
-```
-
-```bash
-cd ~/Projects/carla-nav2-avl
-source /opt/ros/jazzy/setup.zsh
-python3 tmp/camera_display.py
-```
-
-```bash
-cd ~/Projects/carla-nav2-avl
-source /opt/ros/jazzy/setup.zsh
-python3 tmp/costmap_marker_viz.py
-```
-
-```bash
-cd ~/Projects/carla-nav2-avl
-source /opt/ros/jazzy/setup.zsh
-rviz2 -d tmp/video_costmap_markers.rviz
-```
-
 Arrange the OpenCV window and RViz side by side. The publisher can later be
 replaced by live camera nodes as long as they publish the same three topics.
 
