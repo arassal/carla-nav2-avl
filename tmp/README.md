@@ -9,6 +9,8 @@ cd ~/Projects/carla-nav2-avl
 zsh tmp/run_video_test.zsh
 ```
 
+I ran this from feature/alexander branch. What i called this folder/directory was tmp but i don't think that matters. A sister video folder should exist though you could easily get away with making a video folder within this directory and adjusting the code to reflect the change.
+
 Keep that terminal open. Press Ctrl-C in it to stop the complete test. The
 launcher refuses to start if a `perception_costmap` node is already running,
 which prevents multiple configurations from publishing interleaved maps.
