@@ -66,10 +66,10 @@ CAMS = {
                   xyz=(0.6795, 0.0, 0.4476), pitch=15.0, yaw=0.0),
     'left':  dict(topic='/zed_left/zed_node/rgb/color/rect/image',
                   info='/zed_left/zed_node/rgb/color/rect/camera_info',
-                  xyz=(0.098, 0.286, 0.6126), pitch=0.0, yaw=90.0),
+                  xyz=(0.098, 0.286, 0.6126), pitch=18.0, yaw=80.0),
     'right': dict(topic='/zed_right/zed_node/rgb/color/rect/image',
                   info='/zed_right/zed_node/rgb/color/rect/camera_info',
-                  xyz=(0.098, -0.286, 0.6126), pitch=0.0, yaw=-90.0),
+                  xyz=(0.098, -0.286, 0.6126), pitch=18.0, yaw=-80.0),
 }
 
 
