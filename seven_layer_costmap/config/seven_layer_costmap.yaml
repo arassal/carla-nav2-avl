@@ -1,7 +1,7 @@
 seven_layer_costmap:
   ros__parameters:
     use_sim_time: true
-    publish_frequency: 10.0
+    publish_frequency: 5.0
     output_topic: /seven_layer_costmap/costmap
     require_all_layers: true
     stale_timeout_s: 1.0
@@ -41,7 +41,7 @@ three_zed_perception:
     max_camera_skew_s: 0.050
     max_rgb_depth_skew_s: 0.035
     stale_camera_s: 0.5
-    processing_frequency: 10.0
+    processing_frequency: 5.0
     depth_stride: 4
     min_depth_m: 0.5
     max_depth_m: 25.0

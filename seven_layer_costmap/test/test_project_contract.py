@@ -54,6 +54,12 @@ class ProjectContractTests(unittest.TestCase):
             for name in reserved:
                 self.assertNotIn(f'self.{name} =', text, f'{path.name} overwrites {name}')
 
+    def test_fusion_rate_matches_perception_rate(self):
+        config = yaml.safe_load((ROOT / 'config' / 'seven_layer_costmap.yaml').read_text())
+        fusion_hz = config['seven_layer_costmap']['ros__parameters']['publish_frequency']
+        perception_hz = config['three_zed_perception']['ros__parameters']['processing_frequency']
+        self.assertEqual(fusion_hz, perception_hz)
+
 
 if __name__ == '__main__':
     unittest.main()

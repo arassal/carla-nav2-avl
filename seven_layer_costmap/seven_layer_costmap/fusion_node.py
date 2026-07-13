@@ -13,7 +13,7 @@ from .core import LAYER_NAMES, fuse_layers, normalize_layer
 class FusionNode(Node):
     def __init__(self):
         super().__init__('seven_layer_costmap')
-        self.declare_parameter('publish_frequency', 10.0)
+        self.declare_parameter('publish_frequency', 5.0)
         self.declare_parameter('output_topic', '/seven_layer_costmap/costmap')
         self.declare_parameter('require_all_layers', True)
         self.declare_parameter('stale_timeout_s', 1.0)

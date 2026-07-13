@@ -35,7 +35,7 @@ class ThreeZedPerceptionNode(Node):
         self.declare_parameter('max_camera_skew_s', 0.050)
         self.declare_parameter('max_rgb_depth_skew_s', 0.035)
         self.declare_parameter('stale_camera_s', 0.5)
-        self.declare_parameter('processing_frequency', 10.0)
+        self.declare_parameter('processing_frequency', 5.0)
         self.declare_parameter('depth_stride', 4)
         self.declare_parameter('min_depth_m', 0.5)
         self.declare_parameter('max_depth_m', 25.0)

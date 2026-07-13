@@ -79,6 +79,7 @@ class SyntheticZedNode(Node):
         odom.child_frame_id = 'base_link'
         if bool(self.get_parameter('moving_vehicle').value):
             odom.pose.pose.position.x = self._frame * 0.02
+            odom.twist.twist.linear.x = 0.2
         yaw = 0.03 * math.sin(self._frame * 0.02)
         odom.pose.pose.orientation.z = math.sin(yaw / 2)
         odom.pose.pose.orientation.w = math.cos(yaw / 2)
