@@ -74,7 +74,7 @@ perception_costmap:
       cam_pitch_deg: 20.0    # person-walk + brick-VP calib 2026-07-09
       cam_yaw_deg: -86.0    # person-walk calib 2026-07-09
 
-    image_stale_sec: 0.5
+    image_stale_sec: 1.0   # was 0.5: front cam (8 Hz) + tick jitter crossed it, wedge flickered known<->unknown
     lidar_stale_sec: 0.5
 
     temporal_hit: 0.4
