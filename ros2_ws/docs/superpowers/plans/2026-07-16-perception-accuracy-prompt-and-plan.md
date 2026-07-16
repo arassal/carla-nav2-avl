@@ -67,6 +67,51 @@ Recommended phased approach, most cautious first:
 - **Do not skip Phase A.** The depth pipeline has only been validated stationary; a real drive is the first legitimate test of whether it holds up under actual load, and Phase A gets you that data without betting driving behavior on it first.
 
 ### 4. Investigate the thin person-avoidance margin (medium priority)
+
+**UPDATE 2026-07-16 -- investigated; coherent root cause found (needs a drive to confirm).**
+Nothing is attenuating the halo -- the graded field reaches Nav2 correctly
+(verified: the 0-100 OccupancyGrid is scaled into Nav2's internal 0-254 range,
+and Nav2's own InflationLayer combines with max(), so it cannot reduce our
+2.5m person halo). The likely cause is a *planning* interaction, not a
+perception bug:
+
+- **The person halo is deliberately non-lethal beyond its core.** Core = 100
+  (-> 254 = lethal, avoided), but at 0.5m out it is only 47 (-> ~119 in
+  Nav2 scale) = "traversable with penalty".
+- **The global planner is NavFn** (Dijkstra, point-robot, allow_unknown true).
+  A minimum-cost planner will happily route *through* a cost-119 band if
+  detouring around costs more total path length. So the global path likely
+  clips close past the person rather than routing wide around them.
+- **MPPI is then tuned to follow that path tightly.** PathAlignCritic
+  cost_weight 16.0 vs CostCritic cost_weight 6.0 -- path-following is ~3x
+  stronger than obstacle-cost avoidance. That 8.0 -> 16.0 raise was
+  deliberate (2026-05-30, to stop MPPI "looping around every halo" and
+  wandering 30m off a 15m route), and its own config comment warns:
+  "Tune down if it gets too rigid to dodge a real obstacle." That is
+  precisely the symptom observed.
+- **Nav2 own inflation is intentionally thin** (inflation_radius 0.4 ~=
+  robot half-width, so NavFn threads gaps accurately). Its comment
+  explicitly accepts the tradeoff: "band 0.4-0.28=0.12 m = thin MPPI
+  gradient (early-steer is weak) -- that is why the monitor is needed for
+  the slow-down", referring to nav2_collision_monitor, which is marked
+  **(pending)** and does not exist yet. Note our perception layer wide
+  graded halo actually *solves* the very problem that comment laments --
+  but only if the critic balance lets it.
+
+**Recommended experiment (requires a test drive), change ONE variable at a time:**
+1. First just observe: with a person standing off to the side of a straight
+   path, does the *global* path (/plan) route around them, or straight
+   through their halo? That single observation discriminates "NavFn plans
+   through" from "MPPI ignores the plan" and tells you which knob matters.
+2. If the global path goes through: raise person_radius and/or lower
+   person_scaling in perception_dinosaur.yaml so the halo stays costly
+   further out, making the detour cheaper than the pass-through.
+3. If the global path routes around but MPPI cuts the corner anyway: lower
+   PathAlignCritic (16.0 -> 12.0) and/or raise CostCritic (6.0 -> 8.0), in
+   small steps -- 16.0 exists to fix a real past failure (wandering off
+   plan), so do not undo it wholesale.
+
+Original notes below.
 Two independent things to check, ideally with an actual test drive (a stationary RViz costmap inspection can only get you partway):
 - Re-verify the cost values actually reaching Nav2 near a person match what `occupancy.py` computes in isolation (47 @ 0.5m, 22 @ 1m, 4 @ 2m) — confirm nothing is attenuating the halo between the perception costmap and what MPPI actually sees (e.g. Nav2's own `InflationLayer` interacting oddly with an already-graded StaticLayer costmap is a real thing to check for).
 - Review MPPI's critic weights (`nav2_params_humble.yaml` / `nav2_params_igvc_autonav.yaml`) — specifically whether the obstacle/cost critic is weighted strongly enough relative to the goal-tracking critic that a graded (not binary) cost field actually produces a wide swerve rather than a minimal deflection.
