@@ -139,6 +139,27 @@ Visualization Manager:
         Reliability Policy: Best Effort
         Value: /zed_right/zed_node/rgb/color/rect/image
       Value: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Class: rviz_default_plugins/PointCloud2
+      Color: 40; 170; 255
+      Color Transformer: FlatColor
+      Decay Time: 0
+      Enabled: false
+      Name: DepthObstaclePoints
+      Position Transformer: XYZ
+      Selectable: false
+      Size (Pixels): 6
+      Size (m): 0.1
+      Style: Points
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /perception/depth_obstacle_points
+      Use Fixed Frame: true
+      Value: false
   Enabled: true
   Global Options:
     Background Color: 20; 21; 24
