@@ -1,0 +1,81 @@
+zedx_vision_costmap:
+  ros__parameters:
+    use_sim_time: false
+    publish_frequency: 15.0
+    output_topic: /zedx_vision_costmap/costmap
+    require_all_layers: true
+    stale_timeout_s: 1.0
+    weights:
+      lanelet: 1.0
+      static_obstacle: 1.0
+      spatio_temporal_voxel: 1.0
+      prediction: 1.0
+      inflation: 1.0
+
+three_zed_perception:
+  ros__parameters:
+    use_sim_time: false
+    camera_names: [zed_front, zed_left, zed_right]
+    max_camera_skew_s: 0.050
+    max_rgb_depth_skew_s: 0.035
+    sync_queue_size: 90
+    stale_camera_s: 0.5
+    processing_frequency: 15.0
+    depth_stride: 4
+    min_depth_m: 0.5
+    max_depth_m: 25.0
+    width_m: 60.0
+    height_m: 60.0
+    resolution: 0.20
+    frame_id: base_link
+    inflation_radius_m: 2.5
+    inflation_reaction_time_s: 0.35
+    inflation_max_speed_extra_m: 3.0
+    voxel_persistence_s: 2.0
+    max_clear_rays_per_cycle: 75
+    # Camera-only blind-spot handling. These wedges cover the two gaps between
+    # the front and side ZED X views. Direct depth rays make cells observed;
+    # unobserved gap cells receive a mild cost, while obstacle inflation,
+    # temporal memory, and prediction may still raise them to lethal.
+    visibility_max_rays_per_cycle: 1200
+    visibility_dilation_cells: 1
+    blind_spot_centers_deg: [-45.0, 45.0]
+    blind_spot_half_width_deg: 18.0
+    blind_spot_min_range_m: 1.5
+    blind_spot_max_range_m: 12.0
+    blind_spot_unknown_cost: 25
+    blind_spot_clear_cost: 0
+    # Vision-only defaults: every BEV is computed in the calibrated camera-rig
+    # frame. No odometry, vehicle velocity, or cross-frame pose is required.
+    use_motion_compensation: false
+    enable_temporal_memory: false
+    enable_prediction: false
+    bev_ground_band_m: 0.18
+    bev_obstacle_z_min: -1.5
+    bev_obstacle_z_max: 2.8
+    bev_min_points_per_cell: 2
+    ego_min_x: -2.5
+    ego_max_x: 0.8
+    ego_half_width: 1.2
+    timestamp_offsets_s:
+      front: 0.0
+      left: 0.0
+      right: 0.0
+    mounts:
+      front:
+        translation: [0.679450, 0.0, -0.107950]
+        rpy: [0.0, 0.0, 0.0]
+      left:
+        translation: [0.098425, -0.285750, 0.057150]
+        rpy: [0.0, 0.0, 1.570796327]
+      right:
+        translation: [0.098425, 0.285750, 0.057150]
+        rpy: [0.0, 0.0, -1.570796327]
+
+synthetic_zedx_vision_costmap_sources:
+  ros__parameters:
+    use_sim_time: true
+    frame_id: base_link
+    width_m: 60.0
+    height_m: 60.0
+    resolution: 0.20

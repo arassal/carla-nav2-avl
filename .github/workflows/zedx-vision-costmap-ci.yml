@@ -1,0 +1,27 @@
+name: ZED X vision costmap checks
+
+on:
+  push:
+    paths:
+      - zedx_vision_costmap/**
+      - .github/workflows/zedx-vision-costmap-ci.yml
+  pull_request:
+    paths:
+      - zedx_vision_costmap/**
+      - .github/workflows/zedx-vision-costmap-ci.yml
+
+jobs:
+  dependency-light-tests:
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: zedx_vision_costmap
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - run: python -m pip install --upgrade pip numpy pyyaml
+      - run: python -m unittest discover -s test -v
+      - run: python -m compileall -q zedx_vision_costmap launch test
+      - run: python -c "import pathlib,yaml; [yaml.safe_load(p.read_text()) for p in pathlib.Path('config').glob('*.yaml')]"

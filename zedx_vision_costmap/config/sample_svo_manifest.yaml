@@ -1,0 +1,27 @@
+dataset:
+  name: zedx_vision_costmap_5s_20260713
+  drive_folder: https://drive.google.com/drive/folders/1Ew1lBB8XXJfox14D_zE0RPyZoE5vuR9j
+  format: SVO2
+  camera_model: ZED X
+  resolution: [960, 600]
+  frames_per_file: 75
+  frame_rate_hz: 15
+  duration_s: 5.0
+  compression: H265 Lossy (GPU)
+  zed_sdk_writer_version: 5.2.0
+files:
+  front:
+    filename: front_5s.svo2
+    serial_number: 42569280
+    size_bytes: 2543735
+    sha256: dcc80ec9744f0b54b55df35182fbc12eb855b22d438fd211fc600b45c023c539
+  left:
+    filename: left_5s.svo2
+    serial_number: 49910017
+    size_bytes: 2625707
+    sha256: 670fdeafd68a70c8e8ffcb80a4c6f8a0552d3c410e9ca9cf3b39de16a4058343
+  right:
+    filename: right_5s.svo2
+    serial_number: 43779087
+    size_bytes: 2607580
+    sha256: f80de961072593aae5c9e009e6aa449b102177c4b5d39db6c789f2dfc515a1b3
