@@ -1,4 +1,4 @@
-"""Active seven-layer ROS 2 costmap fusion node."""
+"""Active camera-derived ROS 2 costmap fusion node."""
 
 import threading
 import numpy as np
@@ -35,7 +35,8 @@ class FusionNode(Node):
             OccupancyGrid, self.get_parameter('output_topic').value, output_qos)
         hz = float(self.get_parameter('publish_frequency').value)
         self.create_timer(1.0 / hz, self._publish)
-        self.get_logger().info('Waiting for seven costmap layers: ' + ', '.join(LAYER_NAMES))
+        self.get_logger().info(
+            f'Waiting for {len(LAYER_NAMES)} costmap layers: ' + ', '.join(LAYER_NAMES))
 
     def _receive(self, name, msg):
         if (msg.info.width == 0 or msg.info.height == 0 or msg.info.resolution <= 0 or

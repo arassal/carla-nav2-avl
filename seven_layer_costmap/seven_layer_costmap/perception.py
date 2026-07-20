@@ -542,25 +542,7 @@ def vision_lane_layer(spec: GridSpec, bgr, half_width_m=2.0, max_range_m=25.0,
     return costs
 
 
-def traffic_regulation_layer(spec: GridSpec, images, stop_distance_m=8.0):
-    """Conservative red-light visual gate; trained signal/sign detector can replace it."""
-    red = False
-    for bgr in images:
-        image = np.asarray(bgr, dtype=np.float32)
-        upper = image[:max(1, image.shape[0] // 2)]
-        red_pixels = (upper[:, :, 2] > 150) & (upper[:, :, 2] > 1.4 * upper[:, :, 1]) & (
-            upper[:, :, 2] > 1.4 * upper[:, :, 0])
-        red = red or float(red_pixels.mean()) > 0.0005
-    grid = np.zeros(spec.shape, dtype=np.uint8)
-    if red:
-        col = int((stop_distance_m + spec.width_m / 2) / spec.resolution)
-        center_row = spec.shape[0] // 2
-        half = max(1, int(3.0 / spec.resolution))
-        grid[center_row - half:center_row + half + 1, max(0, col - 1):col + 2] = 100
-    return grid
-
-
-def derive_layers(spec, points, front_bgr, all_images, occupancy_model, tracker, pose, stamp_s,
+def derive_layers(spec, points, front_bgr, occupancy_model, tracker, pose, stamp_s,
                   sensor_origins_base,
                   inflation_radius_m=2.5, visibility_max_rays=1200,
                   visibility_dilation_cells=1, blind_centers_deg=(-45.0, 45.0),
@@ -601,5 +583,4 @@ def derive_layers(spec, points, front_bgr, all_images, occupancy_model, tracker,
         'spatio_temporal_voxel': temporal,
         'prediction': prediction,
         'inflation': inflate(combined, inflation_radius_m, spec.resolution, 1.2),
-        'traffic_regulation': traffic_regulation_layer(spec, all_images),
     }

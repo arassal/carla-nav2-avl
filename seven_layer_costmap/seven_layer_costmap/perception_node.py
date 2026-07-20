@@ -108,7 +108,7 @@ class ThreeZedPerceptionNode(Node):
         self._layer_publishers = {name: self.create_publisher(
             OccupancyGrid, f'/seven_layer_costmap/layers/{name}', 1)
             for name in ('lanelet', 'static_obstacle', 'spatio_temporal_voxel',
-                         'prediction', 'inflation', 'traffic_regulation')}
+                         'prediction', 'inflation')}
         map_qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
                              durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self._bev_pub = self.create_publisher(
@@ -281,7 +281,6 @@ class ThreeZedPerceptionNode(Node):
         self._cloud_pub.publish(self._cloud_message(points, stamp_s))
         layers = derive_layers(
             self._spec, points, samples['front'].bgr,
-            [samples[name].bgr for name in ('front', 'left', 'right')],
             self._occupancy, self._tracker, pose, stamp_s, sensor_origins,
             inflation_radius,
             visibility_max_rays=int(

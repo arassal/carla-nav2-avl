@@ -7,8 +7,6 @@ topics=(
   /seven_layer_costmap/layers/spatio_temporal_voxel
   /seven_layer_costmap/layers/prediction
   /seven_layer_costmap/layers/inflation
-  /seven_layer_costmap/layers/traffic_regulation
-  /seven_layer_costmap/layers/road_condition
   /seven_layer_costmap/costmap
   /seven_layer_costmap/diagnostics
 )

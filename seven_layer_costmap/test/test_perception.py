@@ -8,7 +8,7 @@ from seven_layer_costmap.perception import (
     PersistenceSeparator, Pose2D, SkewMonitor, ThreeCameraSynchronizer,
     depth_to_base_points, obstacle_grid, observed_mask_from_rays,
     rotation_matrix_from_rpy,
-    traffic_regulation_layer, inflation_radius_for_speed, remove_ground,
+    inflation_radius_for_speed, remove_ground,
     vision_bev_grid, vision_lane_layer, WorldOccupancyModel,
 )
 
@@ -175,7 +175,7 @@ class PerceptionTests(unittest.TestCase):
         occupancy = WorldOccupancyModel(spec, voxel_m=1.0, z_resolution=1.0)
         layers = derive_layers(
             spec, np.array([[5.0, 4.0, 0.5]], dtype=np.float32), image,
-            [image, image, image], occupancy, CentroidTracker(), Pose2D(), 1.0,
+            occupancy, CentroidTracker(), Pose2D(), 1.0,
             np.array([[0.0, 0.0, 0.0]], dtype=np.float32),
             inflation_radius_m=2.5, visibility_max_rays=1,
             visibility_dilation_cells=0, blind_half_width_deg=12)
@@ -188,7 +188,7 @@ class PerceptionTests(unittest.TestCase):
         image = np.zeros((20, 20, 3), dtype=np.uint8)
         occupancy = WorldOccupancyModel(spec, voxel_m=1.0, z_resolution=1.0)
         layers = derive_layers(
-            spec, [[5.0, 0.0, 0.5]], image, [image] * 3,
+            spec, [[5.0, 0.0, 0.5]], image,
             occupancy, CentroidTracker(), Pose2D(), 1.0,
             [[0.0, 0.0, 0.0]], temporal_memory=False,
             enable_prediction=False)
@@ -196,13 +196,6 @@ class PerceptionTests(unittest.TestCase):
         self.assertEqual(int(layers['static_obstacle'].max()), 0)
         self.assertEqual(int(layers['spatio_temporal_voxel'].max()), 100)
         self.assertEqual(int(layers['prediction'].max()), 0)
-
-    def test_red_signal_adds_stop_barrier(self):
-        spec = GridSpec(20, 20, 1)
-        image = np.zeros((20, 20, 3), dtype=np.uint8)
-        image[:10, :2, 2] = 255
-        layer = traffic_regulation_layer(spec, [image])
-        self.assertEqual(layer.max(), 100)
 
     def test_world_occupancy_compensates_vehicle_translation(self):
         spec = GridSpec(20, 20, 1)

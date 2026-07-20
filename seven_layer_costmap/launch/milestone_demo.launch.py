@@ -1,4 +1,4 @@
-"""Seven-layer milestone demo: synthetic layers plus real/CARLA camera inference."""
+"""Five-layer milestone demo using deterministic synthetic layer inputs."""
 
 import os
 from ament_index_python.packages import get_package_share_directory
@@ -16,8 +16,6 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('use_sim_time', default_value='true'),
         Node(package='seven_layer_costmap', executable='synthetic_layers',
-             parameters=[params, common], output='screen'),
-        Node(package='seven_layer_costmap', executable='road_condition',
              parameters=[params, common], output='screen'),
         Node(package='seven_layer_costmap', executable='costmap_fusion',
              parameters=[params, common], output='screen'),

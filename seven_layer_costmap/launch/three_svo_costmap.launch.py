@@ -1,4 +1,4 @@
-"""Launch three SVO wrapper instances and the complete local seven-layer pipeline."""
+"""Launch three SVO wrapper instances and the camera-derived costmap pipeline."""
 
 import os
 
@@ -76,8 +76,6 @@ def generate_launch_description():
         zed_instance(wrapper, 'zed_right', right, override),
         Node(package='seven_layer_costmap', executable='three_zed_perception',
              parameters=[params], output='screen'),
-        Node(package='seven_layer_costmap', executable='road_condition',
-             parameters=[params, {'use_sim_time': False}], output='screen'),
         Node(package='seven_layer_costmap', executable='costmap_fusion',
              parameters=[params, {'use_sim_time': False}], output='screen'),
         Node(package='rviz2', executable='rviz2', name='three_zed_vision_rviz',

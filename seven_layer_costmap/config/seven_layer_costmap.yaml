@@ -11,28 +11,6 @@ seven_layer_costmap:
       spatio_temporal_voxel: 1.0
       prediction: 1.0
       inflation: 1.0
-      traffic_regulation: 1.0
-      road_condition: 1.0
-
-road_condition_layer:
-  ros__parameters:
-    use_sim_time: false
-    camera_topics:
-      - /zed_front/zed_front_node/rgb/color/rect/image
-      - /zed_left/zed_left_node/rgb/color/rect/image
-      - /zed_right/zed_right_node/rgb/color/rect/image
-    frame_id: base_link
-    width_m: 60.0
-    height_m: 60.0
-    resolution: 0.20
-    publish_frequency: 15.0
-    stale_timeout_s: 0.5
-    require_all_cameras: true
-    max_camera_skew_s: 0.050
-    timestamp_offsets_s:
-      front: 0.0
-      left: 0.0
-      right: 0.0
 
 three_zed_perception:
   ros__parameters:

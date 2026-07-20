@@ -16,11 +16,9 @@ class SyntheticLayersNode(Node):
         self.declare_parameter('height_m', 60.0)
         self.declare_parameter('resolution', 0.20)
         self.declare_parameter('frame_id', 'base_link')
-        self.declare_parameter('publish_road_condition', False)
         self._pubs = {name: self.create_publisher(
             OccupancyGrid, f'/seven_layer_costmap/layers/{name}', 1)
-            for name in LAYER_NAMES
-            if name != 'road_condition' or self.get_parameter('publish_road_condition').value}
+            for name in LAYER_NAMES}
         self.create_timer(0.2, self._publish)
 
     def _message(self, grid):
@@ -56,9 +54,6 @@ class SyntheticLayersNode(Node):
         layers['prediction'] = rasterize_predictions(spec, [(5.0, -2.0, 1.5, 0.5)])
         obstacle_union = np.maximum(layers['static_obstacle'], layers['spatio_temporal_voxel'])
         layers['inflation'] = inflate(obstacle_union, 2.5, spec.resolution, 1.2)
-        layers['traffic_regulation'][h // 2 + 70:h // 2 + 73, w // 2 - 15:w // 2 + 15] = 100
-        if 'road_condition' in layers:
-            layers['road_condition'][:, w // 2:] = 20
         for name, publisher in self._pubs.items():
             publisher.publish(self._message(layers[name]))
 

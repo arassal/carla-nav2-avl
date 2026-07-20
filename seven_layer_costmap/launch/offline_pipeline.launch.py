@@ -1,4 +1,4 @@
-"""Exercise the real seven-layer nodes with synthetic ZED topics and odometry."""
+"""Exercise the real camera-costmap nodes with synthetic ZED topics."""
 
 import os
 from ament_index_python.packages import get_package_share_directory
@@ -14,8 +14,6 @@ def generate_launch_description():
         Node(package='seven_layer_costmap', executable='synthetic_zed',
              parameters=[system_time], output='screen'),
         Node(package='seven_layer_costmap', executable='three_zed_perception',
-             parameters=[params, system_time], output='screen'),
-        Node(package='seven_layer_costmap', executable='road_condition',
              parameters=[params, system_time], output='screen'),
         Node(package='seven_layer_costmap', executable='costmap_fusion',
              parameters=[params, system_time], output='screen'),

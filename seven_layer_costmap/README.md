@@ -2,14 +2,14 @@
 
 This ROS 2 Humble package lives at repository root alongside `docs`,
 `image_thresholding`, `ros2_ws`, and `scripts`. It is an isolated CARLA-first,
-three-ZED-X/SVO-ready prototype. Version 0.7 defaults to a perception-only mode:
+three-ZED-X/SVO-ready prototype. Version 0.8 defaults to a perception-only mode:
 it needs synchronized RGB, registered depth, and camera calibration, but does not
 need vehicle odometry, velocity, Nav2, or motion control. Its primary outputs are:
 
 - `/seven_layer_costmap/bev/occupancy`: instantaneous unknown/free/occupied BEV;
 - `/seven_layer_costmap/bev/image`: color BEV with vehicle-forward pointing up;
 - `/seven_layer_costmap/points/fused`: three-camera depth fused in `base_link`;
-- `/seven_layer_costmap/costmap`: compatibility output from the seven visual layers;
+- `/seven_layer_costmap/costmap`: compatibility output from five visual layers;
 - `/seven_layer_costmap/layers/<layer_name>`: individually inspectable layers.
 
 The runtime sensor contract is camera-only: it does not subscribe to LiDAR,
@@ -46,7 +46,7 @@ ros2 launch seven_layer_costmap three_svo_costmap.launch.py \
 The wrappers publish rectified RGB, registered metric depth, and camera
 calibration. `three_zed_perception` accepts a set only when all three cameras have
 advanced and their SVO timestamps are within `max_camera_skew_s` (50 ms by
-default). A missing, stale, or misaligned camera stops the six perception-layer
+default). A missing, stale, or misaligned camera stops the five perception-layer
 updates; the fail-closed fusion node then stops the master map after its stale
 timeout. Status is available on `/seven_layer_costmap/perception_status`.
 
@@ -73,7 +73,7 @@ configurable front/side blind wedges default to cost 25 when unobserved instead
 of being mislabeled nearly lethal by the lane corridor. Directly observed clear
 cells default to cost 0. Static/temporal memory, predicted motion, and obstacle
 inflation remain allowed to raise blind cells through the full range to 100.
-This confidence mask feeds the existing layers and is not an eighth layer.
+This confidence mask feeds the existing layers and is not another published layer.
 
 If the three recordings use fixed clock offsets, correct them without changing
 the files:
@@ -98,13 +98,11 @@ difference; they cannot repair changing clock drift or dropped frames.
 | spatio-temporal voxel | current obstacle occupancy | instantaneous fused ZED depth | optional temporal memory after pose validation |
 | prediction | future dynamic occupancy | disabled in vision-only mode | semantic tracker if prediction becomes required |
 | inflation | vehicle clearance | union of static, voxel, and prediction layers | validated vehicle footprint and speed-dependent margins |
-| traffic regulation | temporary stop restrictions | conservative red-pixel signal gate | trained traffic-light/sign/road-marking detector |
-| road condition | traction/visibility penalty | three-camera RGB heuristic | trained and safety-validated road/weather model |
-
 The fusion node uses weighted maximum cost. With the default fail-closed setting,
-it does not publish if any of the seven layers is absent, stale, or uses different
+it does not publish if any of the five layers is absent, stale, or uses different
 grid geometry. This catches broken producers instead of silently dropping safety
-information.
+information. Traffic-regulation and road-condition layers were removed in 0.8;
+they no longer publish topics, contribute costs, or gate fused-map publication.
 
 ## Build and verify on Ubuntu 22.04 / ROS 2 Humble
 
@@ -127,7 +125,7 @@ Alternatively, create a development symlink at
 `ros2_ws/src/seven_layer_costmap` pointing to the repository-root package. Do not
 copy it into the workspace, because maintaining two package copies invites drift.
 
-`verification.launch.py` publishes all seven deterministic layers and requires no
+`verification.launch.py` publishes all five deterministic layers and requires no
 CARLA or ZED hardware. `three_svo_costmap.launch.py` is the real input path.
 `milestone_demo.launch.py` remains a CARLA/live-image wiring harness.
 
@@ -150,7 +148,7 @@ ros2 launch seven_layer_costmap visualize.launch.py
 ```
 
 The prepared RViz view enables the instantaneous BEV and fused 3-D point cloud.
-The three RGB feeds, color BEV, fused compatibility costmap, and all seven layers
+The three RGB feeds, color BEV, fused compatibility costmap, and all five layers
 are available as individually toggleable displays.
 
 `config/nav2_consumer.yaml` provides an experimental Nav2 Humble `StaticLayer`
@@ -178,7 +176,7 @@ From the repository-root package directory:
 ```
 
 The environment check verifies required commands and ROS packages. Runtime
-verification checks all seven layers, the fused output, and diagnostics, then
+verification checks all five layers, the fused output, and diagnostics, then
 samples the costmap rate. Diagnostic collection records ROS nodes/topics, ROS
 Doctor, perception health, publication rate, GPU information, Python version,
 and the environment for troubleshooting.
@@ -188,10 +186,8 @@ skew, processing latency, fused point count, BEV obstacle count, and whether
 motion compensation or temporal memory was enabled. Inflation is fixed in the
 default vision-only profile.
 
-Road-condition publication now also requires three fresh, timestamp-aligned image
-streams, so that layer cannot keep the master map alive with stale single-camera
-results. Fusion validates resolution, dimensions, frame, origin, and orientation
-before accepting a layer.
+Fusion validates resolution, dimensions, frame, origin, and orientation before
+accepting a layer.
 
 Run a repeatable local timing smoke test for the dependency-light inflation and
 world-occupancy algorithms with:
@@ -220,29 +216,21 @@ replace ROS/ZED integration testing.
 2. Name/remap their ROS topics to the three configured ZED-compatible image topics.
 3. Start CARLA with native ROS 2 and simulation time.
 4. Run `milestone_demo.launch.py`.
-5. Exercise dry, rain, night/fog, stopped actor, moving actor, traffic light, and
-   lane-boundary scenarios while recording every individual layer and the master.
-
-The image classifier is a deterministic baseline for wiring and CARLA scenario
-verification. It uses lower-image brightness, contrast, and channel spread to
-classify `dry`, `wet`, `low_visibility`, or `snow_or_glare`. It is not a learned
-model and must not be treated as vehicle-safe perception.
+5. Exercise lane-boundary, free-space, stopped-obstacle, and moving-obstacle
+   scenarios while recording every individual layer and the master.
 
 ## What can and cannot be inferred from only three SVO files
 
 Camera intrinsics and synchronized stereo depth are available through each ZED
 wrapper. This package derives a **local, rolling perception costmap** from those
 data. With no Lanelet2/OpenDRIVE/GNSS input, it cannot create a globally referenced
-HD-map lanelet layer or recover regulations that are not visible in the videos.
+HD-map lanelet layer or recover traffic regulations from the videos.
 The layer named `lanelet` is therefore a local vision-derived drivable-lane proxy.
-The traffic layer handles visible red signals only in the dependency-free
-baseline. Signs, arrows, speed limits, yield rules, and occluded signals require a
-trained detector and suitable labeled data.
 
 The baseline algorithms intentionally avoid downloading model weights at runtime.
 They make the complete dataflow executable and testable, but lane estimation,
-red-light detection, road conditions, object identity, and prediction are not
-vehicle-ready until replaced or validated with appropriate models and recordings.
+object identity, and prediction are not vehicle-ready until replaced or validated
+with appropriate models and recordings.
 
 ## Calibration assumptions requiring confirmation
 
@@ -256,10 +244,10 @@ are measured and validated with TF/point-cloud overlays.
 
 ## Preflight and acceptance checks
 
-- All seven topics update at the requested rate with identical geometry/frame.
+- All five layer topics update at the requested rate with identical geometry/frame.
 - The master stops within one stale timeout when any producer is stopped.
-- Synthetic obstacles, predictions, stop line, lane boundary, inflation, and road
-  penalty appear in both the relevant debug layer and the master.
+- Synthetic obstacles, predictions, lane boundary, and inflation appear in both
+  the relevant debug layer and the master.
 - Unit tests pass, followed by a ROS launch smoke test on Humble.
 - CARLA scenario evidence is recorded before claiming integration verification.
 

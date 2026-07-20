@@ -1,4 +1,4 @@
-# Reproducing the seven-layer three-ZED-X costmap
+# Reproducing the three-ZED-X five-layer costmap
 
 This document describes the camera-only milestone that is actually present in
 `feature/jchy05`. It does not claim vehicle-safety validation.
@@ -12,7 +12,7 @@ left, and right. The ZED SDK derives these ROS inputs from the recordings:
 - registered stereo depth from each camera;
 - camera calibration from each camera.
 
-The default 0.7 pipeline is vision-only. It rebuilds the BEV from every current
+The default 0.8 pipeline is vision-only. It rebuilds the BEV from every current
 three-camera set and does not require odometry, vehicle pose, or velocity.
 
 There is no LiDAR, Velodyne, `LaserScan`, radar, or external `PointCloud2` input.
@@ -113,7 +113,7 @@ mask. Within each blind wedge:
   cost up to 100.
 
 The mask is an internal input to the existing lanelet, voxel, prediction, and
-inflation behavior; it does not add an eighth published layer. Tune the wedge
+inflation behavior; it does not add another published layer. Tune the wedge
 angles and ranges only after calibrating the physical camera fields of view.
 
 ## What remains machine- and vehicle-specific
@@ -121,8 +121,8 @@ angles and ranges only after calibrating the physical camera fields of view.
 - Camera translations and rotations are provisional sketch conversions.
 - Timestamp offsets must be measured for each recording set.
 - The lanelet layer is a local vision-derived corridor, not a Lanelet2 HD map.
-- Traffic, road-condition, and object-prediction baselines require trained and
-  validated replacements for production use.
+- The object-prediction baseline requires a trained and validated replacement
+  before it is enabled for production use.
 - A clean end-to-end acceptance run with the sample SVO2 files must still be
   recorded after ensuring playback does not conflict with live vehicle wrappers.
 
@@ -130,7 +130,8 @@ angles and ranges only after calibrating the physical camera fields of view.
 
 - 38 dependency-light tests passed on Windows and on the target Jetson.
 - ROS 2 Humble built package version 0.6.0 on the target Jetson.
-- `verification.launch.py` published all seven layers and the fused map.
+- `verification.launch.py` published all seven layers and the fused map in 0.6;
+  the 0.8 runtime intentionally uses five layers.
 - `offline_pipeline.launch.py` reported `ACTIVE` through the RGB, depth,
   calibration, odometry, and visibility callbacks used by the 0.6 pipeline.
 - `ZED_SVO_Editor` validated all three sample recordings against the manifest.
@@ -145,12 +146,12 @@ the acceptance run on a stationary vehicle after stopping the conflicting live
 camera stack through its normal supervisor; ROS-domain isolation prevents topic
 collisions but does not free GPU/CPU resources.
 
-The 0.7 vision-only outputs, full roll/pitch/yaw transform, quality/realtime
+The 0.8 vision-only outputs, full roll/pitch/yaw transform, quality/realtime
 profiles, and RViz fused-cloud display were dependency-light tested on Windows.
 They still require a new concurrent three-SVO acceptance run on the target. See
 `KNOWN_ISSUES.md` for the remaining calibration and runtime blockers.
 
-## 0.7 target acceptance checklist
+## 0.8 target acceptance checklist
 
 1. Stop all live ZED and older perception processes.
 2. Verify the three SVO identities and hashes, then launch quality mode.

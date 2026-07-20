@@ -1,4 +1,4 @@
-"""Dependency-light end-to-end verification with seven deterministic layer sources."""
+"""Dependency-light end-to-end verification with five deterministic layer sources."""
 
 import os
 from ament_index_python.packages import get_package_share_directory
@@ -11,7 +11,7 @@ def generate_launch_description():
                           'config', 'seven_layer_costmap.yaml')
     return LaunchDescription([
         Node(package='seven_layer_costmap', executable='synthetic_layers',
-             parameters=[params, {'use_sim_time': False, 'publish_road_condition': True}],
+             parameters=[params, {'use_sim_time': False}],
              output='screen'),
         Node(package='seven_layer_costmap', executable='costmap_fusion',
              parameters=[params, {'use_sim_time': False}], output='screen'),

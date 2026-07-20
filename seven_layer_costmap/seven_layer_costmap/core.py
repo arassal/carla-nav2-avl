@@ -14,7 +14,7 @@ except ImportError:  # CI/reference environments may intentionally omit OpenCV.
 
 LAYER_NAMES = (
     'lanelet', 'static_obstacle', 'spatio_temporal_voxel', 'prediction',
-    'inflation', 'traffic_regulation', 'road_condition',
+    'inflation',
 )
 
 
@@ -151,22 +151,3 @@ def rasterize_predictions(spec: GridSpec, tracks, horizons=(0.5, 1.0, 2.0, 3.0),
                     if dx * dx + dy * dy <= r * r and 0 <= cx + dx < w and 0 <= cy + dy < h:
                         grid[cy + dy, cx + dx] = max(grid[cy + dy, cx + dx], cost)
     return grid
-
-
-def infer_road_condition(bgr: np.ndarray) -> Tuple[str, float, int]:
-    """Deterministic baseline classifier for CARLA validation, not a safety model."""
-    image = np.asarray(bgr, dtype=np.float32)
-    if image.ndim != 3 or image.shape[2] != 3:
-        raise ValueError('expected HxWx3 BGR image')
-    lower = image[image.shape[0] // 2:]
-    brightness = float(lower.mean())
-    channel_spread = float(np.mean(np.max(lower, axis=2) - np.min(lower, axis=2)))
-    gray = lower.mean(axis=2)
-    contrast = float(gray.std())
-    if brightness < 45:
-        return 'low_visibility', min(1.0, (55 - brightness) / 40), 45
-    if channel_spread < 12 and contrast > 35:
-        return 'wet', min(1.0, contrast / 70), 35
-    if brightness > 190 and channel_spread < 18:
-        return 'snow_or_glare', min(1.0, brightness / 255), 55
-    return 'dry', 0.70, 0

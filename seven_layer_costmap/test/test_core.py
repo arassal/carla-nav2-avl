@@ -2,8 +2,7 @@ import numpy as np
 import unittest
 
 from seven_layer_costmap.core import (
-    GridSpec, TemporalVoxelGrid, fuse_layers, inflate, infer_road_condition,
-    rasterize_predictions,
+    GridSpec, TemporalVoxelGrid, fuse_layers, inflate, rasterize_predictions,
 )
 
 
@@ -55,9 +54,3 @@ class CoreTests(unittest.TestCase):
     def test_prediction_projects_motion_forward(self):
         result = rasterize_predictions(GridSpec(20, 20, 1), [(0, 0, 2, 0)], horizons=(1.0,))
         self.assertGreater(result[10, 12], 0)
-
-    def test_road_condition_dry_and_low_visibility(self):
-        dry = np.zeros((20, 20, 3), dtype=np.uint8) + np.array([70, 90, 110], dtype=np.uint8)
-        dark = np.full((20, 20, 3), 10, dtype=np.uint8)
-        self.assertEqual(infer_road_condition(dry)[0], 'dry')
-        self.assertEqual(infer_road_condition(dark)[0], 'low_visibility')

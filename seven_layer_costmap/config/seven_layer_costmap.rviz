@@ -102,20 +102,6 @@ Visualization Manager:
         Value: /seven_layer_costmap/layers/inflation
       Alpha: 0.65
       Color Scheme: costmap
-    - Class: rviz_default_plugins/Map
-      Name: Traffic Regulation
-      Enabled: false
-      Topic:
-        Value: /seven_layer_costmap/layers/traffic_regulation
-      Alpha: 0.65
-      Color Scheme: costmap
-    - Class: rviz_default_plugins/Map
-      Name: Road Condition
-      Enabled: false
-      Topic:
-        Value: /seven_layer_costmap/layers/road_condition
-      Alpha: 0.65
-      Color Scheme: costmap
     - Class: rviz_default_plugins/TF
       Name: TF
       Enabled: true

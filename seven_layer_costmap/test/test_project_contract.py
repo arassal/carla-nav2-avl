@@ -49,12 +49,6 @@ class ProjectContractTests(unittest.TestCase):
         text = (ROOT / 'scripts' / 'collect_diagnostics.sh').read_text()
         self.assertNotIn('printenv', text)
 
-    def test_timestamp_offsets_match_between_perception_nodes(self):
-        config = yaml.safe_load((ROOT / 'config' / 'seven_layer_costmap.yaml').read_text())
-        perception = config['three_zed_perception']['ros__parameters']['timestamp_offsets_s']
-        road = config['road_condition_layer']['ros__parameters']['timestamp_offsets_s']
-        self.assertEqual(perception, road)
-
     def test_nodes_do_not_overwrite_rclpy_reserved_collections(self):
         reserved = ('_publishers', '_subscriptions', '_timers', '_clients', '_services')
         for path in (ROOT / 'seven_layer_costmap').glob('*_node.py'):
@@ -86,6 +80,21 @@ class ProjectContractTests(unittest.TestCase):
         mounts = yaml.safe_load((ROOT / 'config' / 'camera_mounts.yaml').read_text())
         self.assertEqual(set(mounts['camera_mounts']), {'left', 'right', 'forward'})
 
+    def test_removed_heuristic_layers_are_absent_from_runtime_contract(self):
+        self.assertNotIn('traffic_regulation', LAYER_NAMES)
+        self.assertNotIn('road_condition', LAYER_NAMES)
+        runtime_files = [
+            ROOT / 'setup.py',
+            ROOT / 'config' / 'seven_layer_costmap.yaml',
+            ROOT / 'config' / 'seven_layer_costmap.rviz',
+            ROOT / 'launch' / 'three_svo_costmap.launch.py',
+            ROOT / 'seven_layer_costmap' / 'perception.py',
+        ]
+        runtime = '\n'.join(path.read_text().lower() for path in runtime_files)
+        self.assertNotIn('traffic_regulation', runtime)
+        self.assertNotIn('road_condition', runtime)
+        self.assertFalse((ROOT / 'seven_layer_costmap' / 'road_condition_node.py').exists())
+
     def test_default_pipeline_is_vision_only_and_uses_full_mount_rotation(self):
         config = yaml.safe_load((ROOT / 'config' / 'seven_layer_costmap.yaml').read_text())
         perception = config['three_zed_perception']['ros__parameters']
@@ -115,15 +124,12 @@ class ProjectContractTests(unittest.TestCase):
         self.assertEqual(len(perception['blind_spot_centers_deg']), 2)
 
     def test_real_and_synthetic_zed_topics_match(self):
-        config = yaml.safe_load((ROOT / 'config' / 'seven_layer_costmap.yaml').read_text())
-        road_topics = config['road_condition_layer']['ros__parameters']['camera_topics']
         perception = (ROOT / 'seven_layer_costmap' / 'perception_node.py').read_text()
         synthetic = (ROOT / 'seven_layer_costmap' / 'synthetic_zed_node.py').read_text()
         for topic in ('/rgb/color/rect/image', '/rgb/color/rect/camera_info',
                       '/depth/depth_registered'):
             self.assertIn(topic, perception)
             self.assertIn(topic, synthetic)
-        self.assertTrue(all('/rgb/color/rect/image' in topic for topic in road_topics))
 
 
 if __name__ == '__main__':

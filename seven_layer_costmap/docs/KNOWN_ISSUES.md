@@ -48,11 +48,12 @@ model should replace it if those scenes matter.
 
 ## Visual semantics are baselines
 
-The depth-derived BEV and point cloud are the primary trustworthy outputs. Lane,
-traffic-light, road-condition, static/dynamic, and prediction layers are
-deterministic integration baselines, not trained or safety-validated perception
-models. Motion prediction and temporal memory are disabled in the vision-only
-default.
+The depth-derived BEV and point cloud are the primary trustworthy outputs. The
+lane, static/dynamic, and prediction layers are deterministic integration
+baselines, not trained or safety-validated perception models. Motion prediction
+and temporal memory are disabled in the vision-only default. The former
+traffic-regulation and road-condition heuristics were removed from the runtime
+contract in version 0.8.
 
 ## Local validation boundary
 
