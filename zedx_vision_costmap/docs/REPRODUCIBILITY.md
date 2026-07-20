@@ -5,14 +5,14 @@ This document describes the camera-only milestone that is actually present in
 
 ## Input and sensor contract
 
-The real playback launch accepts exactly three ZED X SVO/SVO2 files: front,
-left, and right. The ZED SDK derives these ROS inputs from the recordings:
+The primary runtime binds exactly three physical ZED X cameras by serial number:
+front, left, and right. Each ZED wrapper publishes:
 
 - rectified left RGB image from each camera;
 - registered stereo depth from each camera;
 - camera calibration from each camera.
 
-The default 0.9 pipeline is vision-only. It rebuilds the BEV from every current
+The default 0.10 pipeline is vision-only. It rebuilds the BEV from every current
 three-camera set and does not require odometry, vehicle pose, or velocity.
 
 There is no LiDAR, Velodyne, `LaserScan`, radar, or external `PointCloud2` input.
@@ -34,7 +34,27 @@ no subscriber for it; that topic is neither LiDAR nor a required input.
 Run `scripts/check_environment.sh` after sourcing ROS and the ZED workspace. It
 reports missing commands and ROS packages without modifying the machine.
 
-## Obtain and verify the sample recordings
+## Run the physical cameras continuously
+
+Confirm the three cameras are visible to the ZED SDK and that the serial-to-mount
+mapping is correct. With the default rig serials, launch:
+
+```bash
+ros2 run zedx_vision_costmap run_three_zedx_live.sh
+```
+
+For a different rig, supply all serials in front/left/right order:
+
+```bash
+ros2 run zedx_vision_costmap run_three_zedx_live.sh \
+  FRONT_SERIAL LEFT_SERIAL RIGHT_SERIAL
+```
+
+This is the normal real-time process. It continues until interrupted and starts
+RViz automatically. Use `/zedx_vision_costmap/perception_status` and diagnostics
+to confirm all cameras remain synchronized.
+
+## Optional SVO2 replay data
 
 The three five-second recordings are in this
 [Google Drive folder](https://drive.google.com/drive/folders/1Ew1lBB8XXJfox14D_zE0RPyZoE5vuR9j).
@@ -84,7 +104,7 @@ ros2 topic hz /zedx_vision_costmap/costmap
 ros2 launch zedx_vision_costmap visualize.launch.py
 ```
 
-## Replay three real recordings
+## Optionally replay three recordings
 
 Do not run playback with live wrappers using the same `zed_front`, `zed_left`,
 and `zed_right` names. On a stationary test machine, first shut down conflicting
@@ -146,12 +166,12 @@ the acceptance run on a stationary vehicle after stopping the conflicting live
 camera stack through its normal supervisor; ROS-domain isolation prevents topic
 collisions but does not free GPU/CPU resources.
 
-The 0.9 vision-only outputs, full roll/pitch/yaw transform, quality/realtime
+The 0.10 live vision-only outputs, full roll/pitch/yaw transform, live/replay
 profiles, and RViz fused-cloud display were dependency-light tested on Windows.
 They still require a new concurrent three-SVO acceptance run on the target. See
 `KNOWN_ISSUES.md` for the remaining calibration and runtime blockers.
 
-## 0.9 target acceptance checklist
+## 0.10 target acceptance checklist
 
 1. Stop all live ZED and older perception processes.
 2. Verify the three SVO identities and hashes, then launch quality mode.

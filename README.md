@@ -2,14 +2,15 @@
 
 Professional autonomous navigation research platform developed by the AVL mentor team.
 
-## Three-ZED-X SVO2 computer-vision mode
+## Three-ZED-X live computer-vision mode
 
-The `feature/jchy05` branch includes a perception-only replay pipeline in
-[`zedx_vision_costmap`](zedx_vision_costmap/README.md). It accepts front, left,
-and right ZED X `.svo2` recordings and publishes a synchronized fused point cloud,
-an instantaneous unknown/free/occupied BEV, a prepared RViz view, and compatible
-visual costmap layers. It does not require Nav2, vehicle odometry, or motion
-control by default. Calibration and target-runtime limitations are tracked in
+The `feature/jchy05` branch includes a perception-only live pipeline in
+[`zedx_vision_costmap`](zedx_vision_costmap/README.md). It binds the physical
+front, left, and right ZED X cameras by serial number and continuously publishes
+a synchronized fused point cloud, instantaneous unknown/free/occupied BEV,
+prepared RViz view, and compatible visual costmap layers. SVO2 replay remains an
+optional test path. It does not require Nav2, vehicle odometry, or motion control.
+Calibration and target-runtime limitations are tracked in
 [`zedx_vision_costmap/docs/KNOWN_ISSUES.md`](zedx_vision_costmap/docs/KNOWN_ISSUES.md).
 
 ## Overview

@@ -71,9 +71,27 @@ class ProjectContractTests(unittest.TestCase):
             self.assertTrue(text.startswith('#!/usr/bin/env bash'))
             self.assertIn('set -', text)
 
-    def test_three_svo_launcher_is_installed_for_ros2_run(self):
+    def test_live_and_replay_launchers_are_installed_for_ros2_run(self):
         setup_text = (ROOT / 'setup.py').read_text()
-        self.assertIn("scripts=['scripts/run_three_svo_vision.sh']", setup_text)
+        self.assertIn("'scripts/run_three_zedx_live.sh'", setup_text)
+        self.assertIn("'scripts/run_three_svo_vision.sh'", setup_text)
+
+    def test_live_camera_launch_is_primary_and_serial_mapping_matches_manifest(self):
+        launch = (ROOT / 'launch' / 'three_zedx_live.launch.py').read_text()
+        runner = (ROOT / 'scripts' / 'run_three_zedx_live.sh').read_text()
+        profile = yaml.safe_load((ROOT / 'config' / 'zed_live_override.yaml').read_text())
+        manifest = yaml.safe_load((ROOT / 'config' / 'sample_svo_manifest.yaml').read_text())
+        for name in ('front', 'left', 'right'):
+            serial = str(manifest['files'][name]['serial_number'])
+            self.assertIn(f'{name}_serial', launch)
+            self.assertIn(serial, launch)
+            self.assertIn(serial, runner)
+        self.assertIn("'serial_number': serial", launch)
+        self.assertIn("'svo_path': ''", launch)
+        params = profile['/**']['ros__parameters']
+        self.assertNotIn('svo', params)
+        self.assertEqual(params['depth']['depth_mode'], 'NEURAL_LIGHT')
+        self.assertEqual(params['general']['pub_frame_rate'], 15.0)
 
     def test_diagnostic_collection_does_not_dump_all_environment_variables(self):
         text = (ROOT / 'scripts' / 'collect_diagnostics.sh').read_text()

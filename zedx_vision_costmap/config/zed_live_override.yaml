@@ -1,0 +1,14 @@
+/**:
+  ros__parameters:
+    # Sustainable live-camera profile for three concurrent ZED X depth streams.
+    general:
+      pub_resolution: CUSTOM
+      pub_downscale_factor: 2.0
+      pub_frame_rate: 15.0
+    depth:
+      depth_mode: NEURAL_LIGHT
+      depth_stabilization: 20
+    pos_tracking:
+      pos_tracking_enabled: false
+      publish_tf: false
+      publish_map_tf: false

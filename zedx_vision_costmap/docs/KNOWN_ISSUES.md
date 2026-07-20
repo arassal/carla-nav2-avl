@@ -19,7 +19,15 @@ Acceptance check: display `/zedx_vision_costmap/points/fused` in RViz and inspec
 the same planar wall/ground patch where camera fields overlap. It should form one
 surface rather than three displaced surfaces.
 
-## Three concurrent SVO decoders need target validation
+## Three concurrent live depth pipelines need target validation
+
+The primary launch opens all three physical ZED X cameras by serial number and
+runs `NEURAL_LIGHT` depth concurrently. Confirm the ZED SDK sees all three serials
+and measure GPU, CPU, and publication rate on the target. If 15 Hz is not
+sustainable, reduce publication rate or downscale further before increasing depth
+quality. The default serial mapping must match the physical front/left/right rig.
+
+## Three concurrent SVO decoders also need target validation
 
 Stereolabs documents one SVO per wrapper launch. This project runs three isolated
 wrapper instances. A prior target attempt was made while three live ZED stacks,

@@ -1,8 +1,8 @@
-# Three-ZED-X SVO2 vision and BEV pipeline
+# Three-ZED-X live vision and BEV pipeline
 
 This ROS 2 Humble package lives at repository root alongside `docs`,
 `image_thresholding`, `ros2_ws`, and `scripts`. It is an isolated CARLA-first,
-three-ZED-X/SVO-ready prototype. Version 0.9 defaults to a perception-only mode:
+three-ZED-X live/SVO-ready prototype. Version 0.10 defaults to a perception-only mode:
 it needs synchronized RGB, registered depth, and camera calibration, but does not
 need vehicle odometry, velocity, Nav2, or motion control. Its primary outputs are:
 
@@ -17,11 +17,33 @@ Velodyne, `LaserScan`, radar, or external `PointCloud2` topics. ZED stereo depth
 is back-projected internally. The wrapper may advertise a camera-derived point
 cloud topic, but this package neither subscribes to nor requires it. See
 [`docs/REPRODUCIBILITY.md`](docs/REPRODUCIBILITY.md) for a clean-room build,
-sample-data manifest, and replay procedure.
+live-camera procedure and optional sample-data replay manifest.
 
-## Three-SVO pipeline
+## Primary live-camera pipeline
 
-The production-intent launch accepts exactly three absolute SVO paths and starts
+The normal launch binds three physical ZED X cameras by serial number. Defaults
+match the front, left, and right cameras recorded in the supplied rig manifest:
+
+```bash
+ros2 run zedx_vision_costmap run_three_zedx_live.sh
+```
+
+The default serial mapping is front `42569280`, left `49910017`, and right
+`43779087`. Override all three when the physical rig differs:
+
+```bash
+ros2 run zedx_vision_costmap run_three_zedx_live.sh \
+  FRONT_SERIAL LEFT_SERIAL RIGHT_SERIAL
+```
+
+The live profile uses `NEURAL_LIGHT` depth, 15 Hz publication, and 2x image
+downscaling so three concurrent pipelines have a practical real-time target.
+RViz starts automatically. Camera streams continue until the launch is stopped;
+there are no SVO files or playback duration in this path.
+
+## Optional three-SVO replay pipeline
+
+The replay launch accepts exactly three absolute SVO paths and starts
 one namespaced ZED wrapper for each recording:
 
 ```bash
@@ -45,12 +67,12 @@ ros2 launch zedx_vision_costmap three_svo_costmap.launch.py \
 
 The wrappers publish rectified RGB, registered metric depth, and camera
 calibration. `three_zed_perception` accepts a set only when all three cameras have
-advanced and their SVO timestamps are within `max_camera_skew_s` (50 ms by
+advanced and their camera timestamps are within `max_camera_skew_s` (50 ms by
 default). A missing, stale, or misaligned camera stops the five perception-layer
 updates; the fail-closed fusion node then stops the master map after its stale
 timeout. Status is available on `/zedx_vision_costmap/perception_status`.
 
-Stereolabs documents SVO replay as a single-file wrapper operation, so this launch
+Stereolabs documents SVO replay as a single-file wrapper operation, so replay
 uses three wrapper instances. Each wrapper publishes its namespaced internal
 camera-frame statics so depth and positional tracking can start, while dynamic
 and map TF publication remain disabled. Vehicle rig transforms are owned by this
@@ -75,8 +97,8 @@ cells default to cost 0. Static/temporal memory, predicted motion, and obstacle
 inflation remain allowed to raise blind cells through the full range to 100.
 This confidence mask feeds the existing layers and is not another published layer.
 
-If the three recordings use fixed clock offsets, correct them without changing
-the files:
+If the live cameras or recordings use fixed clock offsets, correct them without
+changing their data:
 
 ```yaml
 timestamp_offsets_s:

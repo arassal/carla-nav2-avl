@@ -5,7 +5,7 @@ package_name = 'zedx_vision_costmap'
 
 setup(
     name=package_name,
-    version='0.9.0',
+    version='0.10.0',
     packages=find_packages(exclude=['test']),
     data_files=[
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
@@ -17,7 +17,10 @@ setup(
     ],
     install_requires=['setuptools', 'numpy', 'PyYAML'],
     zip_safe=True,
-    scripts=['scripts/run_three_svo_vision.sh'],
+    scripts=[
+        'scripts/run_three_zedx_live.sh',
+        'scripts/run_three_svo_vision.sh',
+    ],
     entry_points={'console_scripts': [
         'costmap_fusion = zedx_vision_costmap.fusion_node:main',
         'three_zed_perception = zedx_vision_costmap.perception_node:main',
