@@ -41,6 +41,10 @@ class ProjectContractTests(unittest.TestCase):
             self.assertTrue(text.startswith('#!/usr/bin/env bash'))
             self.assertIn('set -', text)
 
+    def test_three_svo_launcher_is_installed_for_ros2_run(self):
+        setup_text = (ROOT / 'setup.py').read_text()
+        self.assertIn("scripts=['scripts/run_three_svo_vision.sh']", setup_text)
+
     def test_diagnostic_collection_does_not_dump_all_environment_variables(self):
         text = (ROOT / 'scripts' / 'collect_diagnostics.sh').read_text()
         self.assertNotIn('printenv', text)

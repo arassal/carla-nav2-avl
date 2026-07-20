@@ -17,6 +17,7 @@ setup(
     ],
     install_requires=['setuptools', 'numpy', 'PyYAML'],
     zip_safe=True,
+    scripts=['scripts/run_three_svo_vision.sh'],
     entry_points={'console_scripts': [
         'costmap_fusion = seven_layer_costmap.fusion_node:main',
         'road_condition = seven_layer_costmap.road_condition_node:main',
