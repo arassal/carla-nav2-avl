@@ -250,27 +250,46 @@ class WorldOccupancyModel:
 
 
 class ThreeCameraSynchronizer:
-    """Latest-sample synchronizer that never reuses a set or accepts excess skew."""
+    """Bounded ordered synchronizer for independently decoded SVO streams."""
 
-    def __init__(self, names=('front', 'left', 'right'), max_skew_s=0.050):
+    def __init__(self, names=('front', 'left', 'right'), max_skew_s=0.050,
+                 queue_size=90):
+        if max_skew_s < 0 or queue_size <= 0:
+            raise ValueError('sync skew must be nonnegative and queue size positive')
         self.names = tuple(names)
         self.max_skew_s = max_skew_s
+        self.queue_size = int(queue_size)
         self.samples: Dict[str, CameraSample] = {}
+        self.queues = {name: deque(maxlen=self.queue_size) for name in self.names}
         self.last_emitted_s = -math.inf
+        self.dropped = 0
 
     def update(self, name: str, sample: CameraSample) -> None:
         if name not in self.names:
             raise KeyError(name)
+        queue = self.queues[name]
+        if queue and sample.stamp_s <= queue[-1].stamp_s:
+            return
+        if len(queue) == queue.maxlen:
+            self.dropped += 1
+        queue.append(sample)
         self.samples[name] = sample
 
     def take(self) -> Optional[Dict[str, CameraSample]]:
-        if any(name not in self.samples for name in self.names):
-            return None
-        stamps = [self.samples[name].stamp_s for name in self.names]
-        if max(stamps) - min(stamps) > self.max_skew_s or min(stamps) <= self.last_emitted_s:
-            return None
-        self.last_emitted_s = min(stamps)
-        return {name: self.samples[name] for name in self.names}
+        while all(self.queues[name] for name in self.names):
+            heads = {name: self.queues[name][0] for name in self.names}
+            stamps = {name: sample.stamp_s for name, sample in heads.items()}
+            minimum, maximum = min(stamps.values()), max(stamps.values())
+            if maximum - minimum <= self.max_skew_s and minimum > self.last_emitted_s:
+                self.last_emitted_s = minimum
+                return {name: self.queues[name].popleft() for name in self.names}
+            # A head older than the newest head by more than the tolerance can
+            # never match any later sample from the other ordered streams.
+            oldest = [name for name, stamp in stamps.items() if stamp == minimum]
+            for name in oldest:
+                self.queues[name].popleft()
+                self.dropped += 1
+        return None
 
 
 class SkewMonitor:
@@ -303,11 +322,40 @@ def inflation_radius_for_speed(base_radius_m, speed_mps, reaction_time_s,
                                       max(0.0, float(speed_mps)) * float(reaction_time_s))
 
 
+def rotation_matrix_from_rpy(rpy):
+    """Return the REP-103 fixed-axis roll/pitch/yaw rotation matrix."""
+    values = np.asarray(rpy, dtype=np.float64).reshape(-1)
+    if len(values) != 3 or not np.isfinite(values).all():
+        raise ValueError('rpy must contain three finite values')
+    roll, pitch, yaw = values
+    cr, sr = math.cos(roll), math.sin(roll)
+    cp, sp = math.cos(pitch), math.sin(pitch)
+    cy, sy = math.cos(yaw), math.sin(yaw)
+    return np.array([
+        [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
+        [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
+        [-sp, cp * sr, cp * cr],
+    ], dtype=np.float64)
+
+
 def depth_to_base_points(depth, intrinsic, translation, yaw=0.0, stride=4,
-                         min_depth=0.5, max_depth=25.0):
-    """Back-project ZED depth and transform optical XYZ to REP-103 base coordinates."""
+                         min_depth=0.5, max_depth=25.0, rpy=None):
+    """Back-project ZED depth and apply the calibrated 6-DoF camera mount.
+
+    ``yaw`` remains for compatibility with the initial milestone. New callers
+    should provide ``rpy=[roll, pitch, yaw]`` so camera tilt is not discarded.
+    """
     z = np.asarray(depth, dtype=np.float32)
     k = np.asarray(intrinsic, dtype=np.float64).reshape(3, 3)
+    translation = np.asarray(translation, dtype=np.float64).reshape(-1)
+    if z.ndim != 2:
+        raise ValueError('depth image must be two-dimensional')
+    if stride <= 0 or min_depth < 0 or max_depth <= min_depth:
+        raise ValueError('invalid depth sampling or range parameters')
+    if len(translation) != 3 or not np.isfinite(translation).all():
+        raise ValueError('translation must contain three finite values')
+    if not np.isfinite(k).all() or k[0, 0] <= 0 or k[1, 1] <= 0:
+        raise ValueError('camera intrinsics must contain positive focal lengths')
     rows = np.arange(0, z.shape[0], stride)
     cols = np.arange(0, z.shape[1], stride)
     uu, vv = np.meshgrid(cols, rows)
@@ -318,11 +366,9 @@ def depth_to_base_points(depth, intrinsic, translation, yaw=0.0, stride=4,
     optical_down = (vv[valid] - k[1, 2]) / k[1, 1] * forward
     # Optical (right, down, forward) -> camera REP-103 (forward, left, up).
     x, y, z_up = forward, -optical_right, -optical_down
-    c, s = math.cos(yaw), math.sin(yaw)
-    base_x = c * x - s * y + translation[0]
-    base_y = s * x + c * y + translation[1]
-    base_z = z_up + translation[2]
-    return np.column_stack((base_x, base_y, base_z)).astype(np.float32)
+    camera_points = np.column_stack((x, y, z_up))
+    rotation = rotation_matrix_from_rpy((0.0, 0.0, yaw) if rpy is None else rpy)
+    return (camera_points @ rotation.T + translation).astype(np.float32)
 
 
 def remove_ground(points, band_m=0.18):
@@ -336,8 +382,11 @@ def remove_ground(points, band_m=0.18):
     return pts[np.abs(pts[:, 2] - ground_z) > band_m]
 
 
-def obstacle_grid(spec: GridSpec, points, z_min=-1.5, z_max=2.8):
+def obstacle_grid(spec: GridSpec, points, z_min=-1.5, z_max=2.8,
+                  min_points_per_cell=1):
     grid = np.zeros(spec.shape, dtype=np.uint8)
+    if min_points_per_cell <= 0:
+        raise ValueError('min_points_per_cell must be positive')
     pts = np.asarray(points).reshape(-1, 3)
     pts = pts[(pts[:, 2] >= z_min) & (pts[:, 2] <= z_max)]
     if not len(pts):
@@ -346,8 +395,48 @@ def obstacle_grid(spec: GridSpec, points, z_min=-1.5, z_max=2.8):
     rows = ((pts[:, 1] + spec.height_m / 2) / spec.resolution).astype(int)
     valid = ((cols >= 0) & (cols < spec.shape[1]) &
              (rows >= 0) & (rows < spec.shape[0]))
-    grid[rows[valid], cols[valid]] = 100
+    counts = np.zeros(spec.shape, dtype=np.uint16)
+    np.add.at(counts, (rows[valid], cols[valid]), 1)
+    grid[counts >= int(min_points_per_cell)] = 100
     return grid
+
+
+def vision_bev_grid(spec: GridSpec, points, sensor_origins_base,
+                    visibility_max_rays=2400, visibility_dilation_cells=1,
+                    ground_band_m=0.18, obstacle_z_min=-1.5,
+                    obstacle_z_max=2.8, min_points_per_cell=2):
+    """Build an instantaneous camera-only BEV with unknown/free/occupied cells.
+
+    Unknown is ``-1``, observed free space is ``0``, and obstacle cells are
+    ``100``. No odometry or cross-frame accumulation is used, preventing stale
+    geometry from being smeared when recordings were captured from a moving rig.
+    """
+    pts = np.asarray(points, dtype=np.float32).reshape(-1, 3)
+    observed = observed_mask_from_rays(
+        spec, pts, sensor_origins_base, max_rays=visibility_max_rays,
+        dilation_cells=visibility_dilation_cells)
+    obstacles = remove_ground(pts, band_m=ground_band_m)
+    obstacles = obstacles[(obstacles[:, 2] >= obstacle_z_min) &
+                          (obstacles[:, 2] <= obstacle_z_max)]
+    occupied = obstacle_grid(
+        spec, obstacles, z_min=obstacle_z_min, z_max=obstacle_z_max,
+        min_points_per_cell=min_points_per_cell)
+    grid = np.full(spec.shape, -1, dtype=np.int8)
+    grid[observed] = 0
+    grid[occupied >= 100] = 100
+    return grid, obstacles
+
+
+def colorize_bev(grid):
+    """Colorize a BEV for an image panel with vehicle-forward pointing up."""
+    values = np.asarray(grid)
+    image = np.zeros((*values.shape, 3), dtype=np.uint8)
+    image[values < 0] = (55, 55, 55)       # unknown: gray
+    image[values == 0] = (35, 95, 35)      # observed free: green
+    image[values >= 100] = (20, 20, 235)   # occupied: red (BGR)
+    # Grid columns are +X and rows are +Y. Rotate/flip for conventional BEV:
+    # +X forward is up and +Y left is left.
+    return np.ascontiguousarray(np.rot90(image, 1)[:, ::-1])
 
 
 class PersistenceSeparator:
@@ -477,19 +566,27 @@ def derive_layers(spec, points, front_bgr, all_images, occupancy_model, tracker,
                   visibility_dilation_cells=1, blind_centers_deg=(-45.0, 45.0),
                   blind_half_width_deg=18.0, blind_min_range_m=1.5,
                   blind_max_range_m=12.0, blind_unknown_cost=25,
-                  blind_clear_cost=0):
+                  blind_clear_cost=0, temporal_memory=True,
+                  enable_prediction=True):
     observed = observed_mask_from_rays(
         spec, points, sensor_origins_base, visibility_max_rays,
         visibility_dilation_cells)
     obstacle_points = remove_ground(points)
     obstacle_points = obstacle_points[(obstacle_points[:, 2] >= -1.5) &
                                       (obstacle_points[:, 2] <= 2.8)]
-    occupancy_model.observe(obstacle_points, pose, sensor_origins_base, stamp_s)
-    static, temporal = occupancy_model.project(pose, stamp_s)
     current = obstacle_grid(spec, obstacle_points)
-    centroids = connected_centroids(current, spec)
-    tracks = tracker.update(centroids, stamp_s)
-    prediction = rasterize_predictions(spec, tracks)
+    if temporal_memory:
+        occupancy_model.observe(obstacle_points, pose, sensor_origins_base, stamp_s)
+        static, temporal = occupancy_model.project(pose, stamp_s)
+    else:
+        static = np.zeros(spec.shape, dtype=np.uint8)
+        temporal = current
+    if enable_prediction:
+        centroids = connected_centroids(current, spec)
+        tracks = tracker.update(centroids, stamp_s)
+        prediction = rasterize_predictions(spec, tracks)
+    else:
+        prediction = np.zeros(spec.shape, dtype=np.uint8)
     combined = np.maximum.reduce((static, temporal, prediction))
     return {
         'lanelet': vision_lane_layer(

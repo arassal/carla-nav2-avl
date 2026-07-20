@@ -1,7 +1,7 @@
 seven_layer_costmap:
   ros__parameters:
-    use_sim_time: true
-    publish_frequency: 5.0
+    use_sim_time: false
+    publish_frequency: 15.0
     output_topic: /seven_layer_costmap/costmap
     require_all_layers: true
     stale_timeout_s: 1.0
@@ -16,7 +16,7 @@ seven_layer_costmap:
 
 road_condition_layer:
   ros__parameters:
-    use_sim_time: true
+    use_sim_time: false
     camera_topics:
       - /zed_front/zed_front_node/rgb/color/rect/image
       - /zed_left/zed_left_node/rgb/color/rect/image
@@ -25,7 +25,7 @@ road_condition_layer:
     width_m: 60.0
     height_m: 60.0
     resolution: 0.20
-    publish_frequency: 5.0
+    publish_frequency: 15.0
     stale_timeout_s: 0.5
     require_all_cameras: true
     max_camera_skew_s: 0.050
@@ -40,8 +40,9 @@ three_zed_perception:
     camera_names: [zed_front, zed_left, zed_right]
     max_camera_skew_s: 0.050
     max_rgb_depth_skew_s: 0.035
+    sync_queue_size: 90
     stale_camera_s: 0.5
-    processing_frequency: 5.0
+    processing_frequency: 15.0
     depth_stride: 4
     min_depth_m: 0.5
     max_depth_m: 25.0
@@ -66,7 +67,15 @@ three_zed_perception:
     blind_spot_max_range_m: 12.0
     blind_spot_unknown_cost: 25
     blind_spot_clear_cost: 0
-    require_odometry: true
+    # Vision-only defaults: every BEV is computed in the calibrated camera-rig
+    # frame. No odometry, vehicle velocity, or cross-frame pose is required.
+    use_motion_compensation: false
+    enable_temporal_memory: false
+    enable_prediction: false
+    bev_ground_band_m: 0.18
+    bev_obstacle_z_min: -1.5
+    bev_obstacle_z_max: 2.8
+    bev_min_points_per_cell: 2
     ego_min_x: -2.5
     ego_max_x: 0.8
     ego_half_width: 1.2
@@ -77,13 +86,13 @@ three_zed_perception:
     mounts:
       front:
         translation: [0.679450, 0.0, -0.107950]
-        yaw: 0.0
+        rpy: [0.0, 0.0, 0.0]
       left:
         translation: [0.098425, -0.285750, 0.057150]
-        yaw: 1.570796327
+        rpy: [0.0, 0.0, 1.570796327]
       right:
         translation: [0.098425, 0.285750, 0.057150]
-        yaw: -1.570796327
+        rpy: [0.0, 0.0, -1.570796327]
 
 synthetic_seven_layer_sources:
   ros__parameters:

@@ -3,16 +3,14 @@
     svo:
       use_svo_timestamps: true
       svo_loop: false
-      # Quality mode processes every frame rather than dropping frames to keep
-      # wall-clock pace. Playback may be slower than the recording.
-      svo_realtime: false
+      svo_realtime: true
     general:
       pub_resolution: CUSTOM
       pub_downscale_factor: 2.0
       pub_frame_rate: 15.0
     depth:
-      depth_mode: NEURAL
-      depth_stabilization: 30
+      depth_mode: NEURAL_LIGHT
+      depth_stabilization: 20
     pos_tracking:
       pos_tracking_enabled: false
       publish_tf: false

@@ -1,12 +1,13 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>seven_layer_costmap</name>
-  <version>0.6.0</version>
+  <version>0.7.0</version>
   <description>Three-ZED-X SVO perception pipeline for a seven-layer active costmap.</description>
   <maintainer email="jchy05@users.noreply.github.com">jchy05</maintainer>
   <license>MIT</license>
   <buildtool_depend>ament_python</buildtool_depend>
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>builtin_interfaces</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>std_msgs</exec_depend>

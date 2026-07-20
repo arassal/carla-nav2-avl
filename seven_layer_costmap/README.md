@@ -1,10 +1,16 @@
-# Seven-layer active costmap — milestone 1
+# Three-ZED-X SVO2 vision and BEV pipeline
 
 This ROS 2 Humble package lives at repository root alongside `docs`,
 `image_thresholding`, `ros2_ws`, and `scripts`. It is an isolated CARLA-first,
-three-ZED-X/SVO-ready prototype. It publishes one active fused `nav_msgs/OccupancyGrid` at
-`/seven_layer_costmap/costmap` and keeps all seven contributing grids visible at
-`/seven_layer_costmap/layers/<layer_name>`.
+three-ZED-X/SVO-ready prototype. Version 0.7 defaults to a perception-only mode:
+it needs synchronized RGB, registered depth, and camera calibration, but does not
+need vehicle odometry, velocity, Nav2, or motion control. Its primary outputs are:
+
+- `/seven_layer_costmap/bev/occupancy`: instantaneous unknown/free/occupied BEV;
+- `/seven_layer_costmap/bev/image`: color BEV with vehicle-forward pointing up;
+- `/seven_layer_costmap/points/fused`: three-camera depth fused in `base_link`;
+- `/seven_layer_costmap/costmap`: compatibility output from the seven visual layers;
+- `/seven_layer_costmap/layers/<layer_name>`: individually inspectable layers.
 
 The runtime sensor contract is camera-only: it does not subscribe to LiDAR,
 Velodyne, `LaserScan`, radar, or external `PointCloud2` topics. ZED stereo depth
@@ -25,6 +31,18 @@ ros2 launch seven_layer_costmap three_svo_costmap.launch.py \
   right_svo:=/data/right.svo2
 ```
 
+RViz starts by default with the instantaneous BEV and fused point cloud enabled.
+The default ZED override uses `NEURAL` depth and asks the wrapper to process every
+frame rather than dropping to maintain wall-clock pace. The bounded synchronizer
+reports any consumer-side queue drops. For a lower-load interactive preview, use:
+
+```bash
+SHARE=$(ros2 pkg prefix --share seven_layer_costmap)
+ros2 launch seven_layer_costmap three_svo_costmap.launch.py \
+  front_svo:=/data/front.svo2 left_svo:=/data/left.svo2 right_svo:=/data/right.svo2 \
+  zed_override_path:=$SHARE/config/zed_svo_realtime_override.yaml
+```
+
 The wrappers publish rectified RGB, registered metric depth, and camera
 calibration. `three_zed_perception` accepts a set only when all three cameras have
 advanced and their SVO timestamps are within `max_camera_skew_s` (50 ms by
@@ -38,12 +56,17 @@ camera-frame statics so depth and positional tracking can start, while dynamic
 and map TF publication remain disabled. Vehicle rig transforms are owned by this
 project and must be calibrated.
 
-The front wrapper's visual-inertial odometry is required. Observations are stored
-as sparse world-frame voxels and projected back into a rolling vehicle-centered
-grid. This prevents stationary obstacles from smearing when the vehicle moves or
-turns. Sampled depth rays clear previously occupied free space, while unobserved
-voxels expire after `voxel_persistence_s`. A configurable rectangular ego mask
-rejects visible vehicle-body returns before occupancy processing.
+The default BEV is rebuilt from the current synchronized camera set. It does not
+accumulate world-frame voxels or infer object motion, so bad/missing odometry
+cannot smear recorded geometry. The former motion-compensated memory and
+prediction behavior remains available behind `use_motion_compensation`,
+`enable_temporal_memory`, and `enable_prediction`, all disabled by default. A
+configurable rectangular ego mask rejects visible vehicle-body returns.
+
+Camera transforms now accept calibrated `[roll, pitch, yaw]`, not yaw alone.
+This matters: even small pitch error moves the fitted ground plane and obstacle
+footprints. The supplied values are placeholders and must be replaced after
+physical calibration; see `docs/KNOWN_ISSUES.md`.
 
 Valid stereo-depth rays also form an internal observed-space mask. The two
 configurable front/side blind wedges default to cost 25 when unobserved instead
@@ -71,9 +94,9 @@ difference; they cannot repair changing clock drift or dropped frames.
 | Layer | Purpose | Milestone input | Vehicle input required later |
 |---|---|---|---|
 | lanelet | penalize locally non-drivable space | front-image marking estimate, corridor, and visibility-aware blind wedges | trained lane/drivable segmentation for production |
-| static obstacle | persistent geometry | repeated fused depth occupancy | semantic static/dynamic classification |
-| spatio-temporal voxel | recent 3-D occupancy with decay | fused ZED depth with 2 s persistence | tune marking/ray-clearing on SVO data |
-| prediction | future dynamic occupancy | depth-component centroid tracking and constant velocity | multi-object semantic tracker and lane-aware predictor |
+| static obstacle | persistent geometry | disabled in vision-only mode | enable only with trustworthy motion compensation |
+| spatio-temporal voxel | current obstacle occupancy | instantaneous fused ZED depth | optional temporal memory after pose validation |
+| prediction | future dynamic occupancy | disabled in vision-only mode | semantic tracker if prediction becomes required |
 | inflation | vehicle clearance | union of static, voxel, and prediction layers | validated vehicle footprint and speed-dependent margins |
 | traffic regulation | temporary stop restrictions | conservative red-pixel signal gate | trained traffic-light/sign/road-marking detector |
 | road condition | traction/visibility penalty | three-camera RGB heuristic | trained and safety-validated road/weather model |
@@ -109,7 +132,7 @@ CARLA or ZED hardware. `three_svo_costmap.launch.py` is the real input path.
 `milestone_demo.launch.py` remains a CARLA/live-image wiring harness.
 
 For a stronger hardware-free check, run the actual perception pipeline against
-synthetic ZED-compatible RGB, registered depth, calibration, and odometry topics:
+synthetic ZED-compatible RGB, registered depth, and calibration topics:
 
 ```bash
 ros2 launch seven_layer_costmap offline_pipeline.launch.py
@@ -118,7 +141,7 @@ ros2 topic hz /seven_layer_costmap/costmap
 ```
 
 Unlike `verification.launch.py`, this does not publish prebuilt layer grids. It
-drives the same image/depth/odometry callbacks used by three-SVO playback.
+drives the same image/depth/calibration callbacks used by three-SVO playback.
 
 Open the prepared top-down view in another terminal:
 
@@ -126,8 +149,9 @@ Open the prepared top-down view in another terminal:
 ros2 launch seven_layer_costmap visualize.launch.py
 ```
 
-All seven layers are configured as individually toggleable RViz Map displays.
-The fused map is enabled initially.
+The prepared RViz view enables the instantaneous BEV and fused 3-D point cloud.
+The three RGB feeds, color BEV, fused compatibility costmap, and all seven layers
+are available as individually toggleable displays.
 
 `config/nav2_consumer.yaml` provides an experimental Nav2 Humble `StaticLayer`
 consumer for the fused topic and a provisional rectangular vehicle footprint.
@@ -160,10 +184,9 @@ Doctor, perception health, publication rate, GPU information, Python version,
 and the environment for troubleshooting.
 
 Standard diagnostic output includes accepted/rejected synchronized sets, image
-skew, processing latency, point and voxel counts, vehicle speed, and the active
-inflation radius. Inflation grows with odometry speed and is capped by
-`inflation_max_speed_extra_m`; all dimensions remain provisional until the actual
-vehicle footprint is confirmed.
+skew, processing latency, fused point count, BEV obstacle count, and whether
+motion compensation or temporal memory was enabled. Inflation is fixed in the
+default vision-only profile.
 
 Road-condition publication now also requires three fresh, timestamp-aligned image
 streams, so that layer cannot keep the master map alive with stale single-camera
@@ -246,7 +269,7 @@ Before accepting an SVO run, also verify:
 - `/seven_layer_costmap/perception_status` stays `ACTIVE` with acceptable skew.
 - Registered depth uses `32FC1` meters and each `CameraInfo` is nonzero.
 - Depth-derived obstacle projections align after replacing provisional mount transforms.
-- ZED odometry remains synchronized with image/depth timestamps and does not jump.
+- The fused cloud has no double edges after applying measured 6-DoF mounts.
 - The ego exclusion rectangle masks only vehicle bodywork, not nearby obstacles.
 - A newly visible clear ray removes a disappeared obstacle without waiting for expiry.
 - Stopping any one wrapper causes the fused map to stop within one second.

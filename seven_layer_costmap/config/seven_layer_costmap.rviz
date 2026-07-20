@@ -14,8 +14,53 @@ Visualization Manager:
       Cell Size: 1
       Plane: XY
     - Class: rviz_default_plugins/Map
-      Name: Fused Costmap
+      Name: Vision BEV (instantaneous)
       Enabled: true
+      Topic:
+        Value: /seven_layer_costmap/bev/occupancy
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
+      Alpha: 0.78
+      Color Scheme: costmap
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Three-camera fused depth
+      Enabled: true
+      Topic:
+        Value: /seven_layer_costmap/points/fused
+        Reliability Policy: Best Effort
+        Depth: 5
+      Style: Points
+      Size (Pixels): 2
+      Color Transformer: AxisColor
+      Axis: Z
+    - Class: rviz_default_plugins/Image
+      Name: BEV color image
+      Enabled: false
+      Topic:
+        Value: /seven_layer_costmap/bev/image
+        Reliability Policy: Best Effort
+      Normalize Range: true
+    - Class: rviz_default_plugins/Image
+      Name: Front RGB
+      Enabled: false
+      Topic:
+        Value: /zed_front/zed_front_node/rgb/color/rect/image
+        Reliability Policy: Best Effort
+    - Class: rviz_default_plugins/Image
+      Name: Left RGB
+      Enabled: false
+      Topic:
+        Value: /zed_left/zed_left_node/rgb/color/rect/image
+        Reliability Policy: Best Effort
+    - Class: rviz_default_plugins/Image
+      Name: Right RGB
+      Enabled: false
+      Topic:
+        Value: /zed_right/zed_right_node/rgb/color/rect/image
+        Reliability Policy: Best Effort
+    - Class: rviz_default_plugins/Map
+      Name: Fused Costmap
+      Enabled: false
       Topic:
         Value: /seven_layer_costmap/costmap
         Durability Policy: Transient Local

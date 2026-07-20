@@ -4,11 +4,12 @@ import numpy as np
 
 from seven_layer_costmap.core import GridSpec
 from seven_layer_costmap.perception import (
-    blind_spot_mask, CameraSample, CentroidTracker, derive_layers,
+    blind_spot_mask, CameraSample, CentroidTracker, colorize_bev, derive_layers,
     PersistenceSeparator, Pose2D, SkewMonitor, ThreeCameraSynchronizer,
     depth_to_base_points, obstacle_grid, observed_mask_from_rays,
+    rotation_matrix_from_rpy,
     traffic_regulation_layer, inflation_radius_for_speed, remove_ground,
-    vision_lane_layer, WorldOccupancyModel,
+    vision_bev_grid, vision_lane_layer, WorldOccupancyModel,
 )
 
 
@@ -33,6 +34,32 @@ class PerceptionTests(unittest.TestCase):
         sync.update('right', sample(10.20))
         self.assertIsNone(sync.take())
 
+    def test_three_camera_sync_queues_independent_decoder_rates(self):
+        sync = ThreeCameraSynchronizer(max_skew_s=0.03, queue_size=10)
+        for stamp in (1.00, 1.10, 1.20):
+            sync.update('front', sample(stamp))
+        for stamp in (1.01, 1.11):
+            sync.update('left', sample(stamp))
+        sync.update('right', sample(1.02))
+        first = sync.take()
+        self.assertIsNotNone(first)
+        self.assertAlmostEqual(first['front'].stamp_s, 1.00)
+        sync.update('right', sample(1.12))
+        second = sync.take()
+        self.assertIsNotNone(second)
+        self.assertAlmostEqual(second['front'].stamp_s, 1.10)
+
+    def test_three_camera_sync_discards_unmatchable_old_heads(self):
+        sync = ThreeCameraSynchronizer(max_skew_s=0.03, queue_size=3)
+        sync.update('front', sample(1.00))
+        sync.update('front', sample(1.10))
+        sync.update('left', sample(1.09))
+        sync.update('right', sample(1.11))
+        matched = sync.take()
+        self.assertIsNotNone(matched)
+        self.assertAlmostEqual(matched['front'].stamp_s, 1.10)
+        self.assertGreaterEqual(sync.dropped, 1)
+
     def test_skew_monitor_counts_violations(self):
         monitor = SkewMonitor(0.05)
         monitor.observe([1.0, 1.02, 1.04])
@@ -51,10 +78,43 @@ class PerceptionTests(unittest.TestCase):
         point = depth_to_base_points(depth, k, [1.0, 2.0, 3.0], stride=1)[0]
         np.testing.assert_allclose(point, [3.0, 2.0, 3.0])
 
+    def test_depth_backprojection_applies_full_mount_rotation(self):
+        depth = np.array([[2.0]], dtype=np.float32)
+        k = np.eye(3)
+        point = depth_to_base_points(
+            depth, k, [0.0, 0.0, 0.0], stride=1,
+            rpy=[0.0, np.pi / 2, 0.0])[0]
+        np.testing.assert_allclose(point, [0.0, 0.0, -2.0], atol=1e-6)
+        np.testing.assert_allclose(rotation_matrix_from_rpy([0, 0, 0]), np.eye(3))
+
+    def test_depth_backprojection_rejects_invalid_intrinsics(self):
+        with self.assertRaises(ValueError):
+            depth_to_base_points(np.ones((2, 2)), np.zeros((3, 3)), [0, 0, 0])
+
     def test_obstacle_height_filter(self):
         spec = GridSpec(10, 10, 1)
         grid = obstacle_grid(spec, [[1, 1, -2.0], [2, 1, 1.0]])
         self.assertEqual(int((grid == 100).sum()), 1)
+
+    def test_obstacle_grid_can_reject_single_point_noise(self):
+        spec = GridSpec(10, 10, 1)
+        grid = obstacle_grid(spec, [[1.1, 1.1, 0.5]], min_points_per_cell=2)
+        self.assertEqual(int(grid.max()), 0)
+        grid = obstacle_grid(
+            spec, [[1.1, 1.1, 0.5], [1.2, 1.2, 0.6]], min_points_per_cell=2)
+        self.assertEqual(int(grid.max()), 100)
+
+    def test_instantaneous_bev_marks_unknown_free_and_occupied(self):
+        spec = GridSpec(20, 20, 1)
+        grid, obstacles = vision_bev_grid(
+            spec, [[5.0, 0.0, 0.5]], [[0.0, 0.0, 0.0]],
+            visibility_max_rays=1, visibility_dilation_cells=0,
+            min_points_per_cell=1)
+        self.assertEqual(grid[10, 10], 0)
+        self.assertEqual(grid[10, 15], 100)
+        self.assertEqual(grid[15, 15], -1)
+        self.assertEqual(len(obstacles), 1)
+        self.assertEqual(colorize_bev(grid).shape, (20, 20, 3))
 
     def test_dominant_ground_band_is_removed(self):
         ground = np.column_stack((np.arange(100), np.zeros(100), np.full(100, -1.0)))
@@ -122,6 +182,20 @@ class PerceptionTests(unittest.TestCase):
         self.assertEqual(layers['lanelet'][15, 15], 25)
         self.assertGreater(layers['inflation'][15, 15], 25)
         self.assertEqual(layers['spatio_temporal_voxel'][14, 15], 100)
+
+    def test_vision_only_layers_do_not_accumulate_or_predict(self):
+        spec = GridSpec(20, 20, 1)
+        image = np.zeros((20, 20, 3), dtype=np.uint8)
+        occupancy = WorldOccupancyModel(spec, voxel_m=1.0, z_resolution=1.0)
+        layers = derive_layers(
+            spec, [[5.0, 0.0, 0.5]], image, [image] * 3,
+            occupancy, CentroidTracker(), Pose2D(), 1.0,
+            [[0.0, 0.0, 0.0]], temporal_memory=False,
+            enable_prediction=False)
+        self.assertFalse(occupancy.last_seen)
+        self.assertEqual(int(layers['static_obstacle'].max()), 0)
+        self.assertEqual(int(layers['spatio_temporal_voxel'].max()), 100)
+        self.assertEqual(int(layers['prediction'].max()), 0)
 
     def test_red_signal_adds_stop_barrier(self):
         spec = GridSpec(20, 20, 1)

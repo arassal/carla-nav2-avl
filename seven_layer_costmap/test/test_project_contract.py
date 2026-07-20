@@ -30,6 +30,10 @@ class ProjectContractTests(unittest.TestCase):
         self.assertIn('/seven_layer_costmap/costmap', rviz)
         for layer in LAYER_NAMES:
             self.assertIn(f'/seven_layer_costmap/layers/{layer}', rviz)
+        self.assertIn('/seven_layer_costmap/bev/occupancy', rviz)
+        self.assertIn('/seven_layer_costmap/points/fused', rviz)
+        for camera in ('zed_front', 'zed_left', 'zed_right'):
+            self.assertIn(f'/{camera}/{camera}_node/rgb/color/rect/image', rviz)
 
     def test_operational_scripts_are_strict_shell_scripts(self):
         for script in (ROOT / 'scripts').glob('*.sh'):
@@ -68,14 +72,35 @@ class ProjectContractTests(unittest.TestCase):
             ROOT / 'config' / 'seven_layer_costmap.yaml',
         ]
         runtime = '\n'.join(path.read_text().lower() for path in checked)
-        for forbidden in ('laserscan', 'pointcloud2', 'velodyne', 'lidar_topic'):
+        for forbidden in ('laserscan', 'velodyne', 'lidar_topic'):
             self.assertNotIn(forbidden, runtime)
+        self.assertNotIn('create_subscription(PointCloud2', runtime)
 
         zed = yaml.safe_load((ROOT / 'config' / 'zed_svo_override.yaml').read_text())
         self.assertNotIn('point_cloud_freq',
                          zed['/**']['ros__parameters'].get('depth', {}))
         mounts = yaml.safe_load((ROOT / 'config' / 'camera_mounts.yaml').read_text())
         self.assertEqual(set(mounts['camera_mounts']), {'left', 'right', 'forward'})
+
+    def test_default_pipeline_is_vision_only_and_uses_full_mount_rotation(self):
+        config = yaml.safe_load((ROOT / 'config' / 'seven_layer_costmap.yaml').read_text())
+        perception = config['three_zed_perception']['ros__parameters']
+        self.assertFalse(perception['use_motion_compensation'])
+        self.assertFalse(perception['enable_temporal_memory'])
+        self.assertFalse(perception['enable_prediction'])
+        for name in ('front', 'left', 'right'):
+            self.assertEqual(len(perception['mounts'][name]['rpy']), 3)
+
+    def test_quality_and_realtime_svo_profiles_are_distinct(self):
+        quality = yaml.safe_load((ROOT / 'config' / 'zed_svo_override.yaml').read_text())
+        realtime = yaml.safe_load(
+            (ROOT / 'config' / 'zed_svo_realtime_override.yaml').read_text())
+        quality_params = quality['/**']['ros__parameters']
+        realtime_params = realtime['/**']['ros__parameters']
+        self.assertFalse(quality_params['svo']['svo_realtime'])
+        self.assertEqual(quality_params['depth']['depth_mode'], 'NEURAL')
+        self.assertTrue(realtime_params['svo']['svo_realtime'])
+        self.assertEqual(realtime_params['depth']['depth_mode'], 'NEURAL_LIGHT')
 
     def test_blind_spot_costs_are_ordered_and_nonlethal(self):
         config = yaml.safe_load((ROOT / 'config' / 'seven_layer_costmap.yaml').read_text())

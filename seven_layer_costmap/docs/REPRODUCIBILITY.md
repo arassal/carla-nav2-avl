@@ -10,8 +10,10 @@ left, and right. The ZED SDK derives these ROS inputs from the recordings:
 
 - rectified left RGB image from each camera;
 - registered stereo depth from each camera;
-- camera calibration from each camera; and
-- visual-inertial odometry from the front camera.
+- camera calibration from each camera.
+
+The default 0.7 pipeline is vision-only. It rebuilds the BEV from every current
+three-camera set and does not require odometry, vehicle pose, or velocity.
 
 There is no LiDAR, Velodyne, `LaserScan`, radar, or external `PointCloud2` input.
 The perception code back-projects stereo-depth pixels internally. A ZED wrapper
@@ -76,6 +78,8 @@ In other terminals, source the same setup and inspect:
 
 ```bash
 ros2 topic echo --once /seven_layer_costmap/perception_status
+ros2 topic hz /seven_layer_costmap/bev/occupancy
+ros2 topic hz /seven_layer_costmap/points/fused
 ros2 topic hz /seven_layer_costmap/costmap
 ros2 launch seven_layer_costmap visualize.launch.py
 ```
@@ -93,9 +97,9 @@ ros2 launch seven_layer_costmap three_svo_costmap.launch.py \
   right_svo:=/absolute/path/right_5s.svo2
 ```
 
-The launch rejects missing or relative paths. A three-camera set is accepted
-only when RGB/depth pairs are fresh and all corrected timestamps satisfy the
-configured skew limits.
+The launch rejects missing, relative, duplicate, or incorrectly suffixed paths.
+A three-camera set is accepted only when RGB/depth pairs are fresh and all
+corrected timestamps satisfy the configured skew limits. RViz starts by default.
 
 ## Blind-spot behavior
 
@@ -127,8 +131,8 @@ angles and ranges only after calibrating the physical camera fields of view.
 - 38 dependency-light tests passed on Windows and on the target Jetson.
 - ROS 2 Humble built package version 0.6.0 on the target Jetson.
 - `verification.launch.py` published all seven layers and the fused map.
-- `offline_pipeline.launch.py` reported `ACTIVE` through the same RGB, depth,
-  calibration, odometry, and visibility callbacks used by SVO playback.
+- `offline_pipeline.launch.py` reported `ACTIVE` through the RGB, depth,
+  calibration, odometry, and visibility callbacks used by the 0.6 pipeline.
 - `ZED_SVO_Editor` validated all three sample recordings against the manifest.
 - A single front recording opened in ZED SDK 5.2.0 and advertised the expected
   RGB, registered-depth, calibration, and odometry topics through completion.
@@ -140,3 +144,22 @@ three playback instances did not all load under that resource contention. Repeat
 the acceptance run on a stationary vehicle after stopping the conflicting live
 camera stack through its normal supervisor; ROS-domain isolation prevents topic
 collisions but does not free GPU/CPU resources.
+
+The 0.7 vision-only outputs, full roll/pitch/yaw transform, quality/realtime
+profiles, and RViz fused-cloud display were dependency-light tested on Windows.
+They still require a new concurrent three-SVO acceptance run on the target. See
+`KNOWN_ISSUES.md` for the remaining calibration and runtime blockers.
+
+## 0.7 target acceptance checklist
+
+1. Stop all live ZED and older perception processes.
+2. Verify the three SVO identities and hashes, then launch quality mode.
+3. Confirm `/seven_layer_costmap/perception_status` remains `ACTIVE`.
+4. Record current/mean/max camera skew and processing latency diagnostics.
+5. Inspect `/seven_layer_costmap/points/fused` in every overlap region. Measure
+   and correct full 6-DoF mounts until walls and ground form single surfaces.
+6. Confirm the BEV distinguishes unknown (`-1`), observed free (`0`), and
+   occupied (`100`) cells and does not retain obstacles from earlier frames.
+7. If quality mode cannot sustain the needed interactive rate, repeat with the
+   realtime override and compare accuracy, skipped frames, and GPU utilization.
+8. Save the diagnostic report and screenshots with the exact commit hash.
