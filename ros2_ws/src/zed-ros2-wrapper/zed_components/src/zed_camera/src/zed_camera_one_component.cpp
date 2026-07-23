@@ -683,9 +683,17 @@ bool ZedCameraOne::startCamera()
     _initParams.camera_resolution = static_cast<sl::RESOLUTION>(_camResol);
 
     if (_camSerialNumber > 0) {
+#if (ZED_SDK_MAJOR_VERSION * 10 + ZED_SDK_MINOR_VERSION) < 51
       _initParams.input.setFromSerialNumber(_camSerialNumber, sl::BUS_TYPE::GMSL);
+#else
+      _initParams.input.setFromSerialNumber(_camSerialNumber);
+#endif
     } else if (_camId >= 0) {
+#if (ZED_SDK_MAJOR_VERSION * 10 + ZED_SDK_MINOR_VERSION) < 51
       _initParams.input.setFromCameraID(_camId, sl::BUS_TYPE::GMSL, sl::CAMERA_TYPE::MONO);
+#else
+      _initParams.input.setFromCameraID(_camId, sl::BUS_TYPE::GMSL);
+#endif
     }
   }
 

@@ -76,6 +76,20 @@ class ProjectContractTests(unittest.TestCase):
         self.assertIn("'scripts/run_three_zedx_live.sh'", setup_text)
         self.assertIn("'scripts/run_three_svo_vision.sh'", setup_text)
 
+    def test_vendored_wrapper_supports_zed_sdk_51_and_newer(self):
+        wrapper = (
+            ROOT.parent / 'ros2_ws' / 'src' / 'zed-ros2-wrapper' /
+            'zed_components' / 'src' / 'zed_camera' / 'src' /
+            'zed_camera_one_component.cpp'
+        ).read_text()
+        guard = '#if (ZED_SDK_MAJOR_VERSION * 10 + ZED_SDK_MINOR_VERSION) < 51'
+        self.assertGreaterEqual(wrapper.count(guard), 2)
+        self.assertIn('_initParams.input.setFromSerialNumber(_camSerialNumber);', wrapper)
+        self.assertIn(
+            '_initParams.input.setFromCameraID(_camId, sl::BUS_TYPE::GMSL);',
+            wrapper,
+        )
+
     def test_live_camera_launch_is_primary_and_serial_mapping_matches_manifest(self):
         launch = (ROOT / 'launch' / 'three_zedx_live.launch.py').read_text()
         runner = (ROOT / 'scripts' / 'run_three_zedx_live.sh').read_text()
