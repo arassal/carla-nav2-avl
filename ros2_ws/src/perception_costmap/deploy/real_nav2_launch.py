@@ -1,20 +1,25 @@
 #!/usr/bin/env python3
-"""Minimal Nav2 bringup for the real car: controller_server, planner_server,
-behavior_server, bt_navigator + lifecycle_manager. Mirrors sim_nav2_launch.py.
+"""Nav2 bringup for the real car: the obstacle-cloud bridge + the five Nav2
+servers (controller, planner, behavior, bt_navigator, lifecycle_manager).
 
-SAFETY: controller_server's /cmd_vel output is remapped to /nav2/cmd_vel, an
-isolated topic actuator_node does NOT subscribe to (it only listens on the
-real /cmd_vel). This is deliberate -- prep/validation only, per instruction
-not to connect Nav2 to the real motors until explicitly told to. To actually
-enable driving later, remap /nav2/cmd_vel -> /cmd_vel (one line, reversible,
-visible) -- do not do this without being told to.
+The bridge (costmap_to_cloud.py) is started HERE on purpose: Nav2's
+ObstacleLayer takes its only observation source from /perception/costmap_cloud
+(see real_nav2_params.yaml), which nothing else publishes. Without it Nav2
+comes up with an empty costmap and plans through everything -- so the launch
+that starts Nav2 must also start the bridge.
+
+SAFETY: controller_server + behavior_server /cmd_vel output is remapped to
+/nav2/cmd_vel, an isolated topic actuator_node does NOT subscribe to (it only
+listens on the real /cmd_vel). This is the default (disarmed). Set NAV2_ARMED=1
+to publish to the real /cmd_vel and let Nav2 drive the motors -- an explicit,
+reversible opt-in. Do not arm without a human on the E-stop.
 """
 import os
 
 from launch import LaunchDescription
+from launch.actions import ExecuteProcess
 from launch_ros.actions import Node
 
-import os
 _HERE = os.path.dirname(os.path.abspath(__file__))
 # self-locating: config/ sits next to deploy/ in the package, so this
 # resolves correctly from any clone location (no hardcoded home path).
@@ -31,6 +36,13 @@ CMD_VEL_REMAP = [] if ARMED else [("/cmd_vel", "/nav2/cmd_vel")]
 
 def generate_launch_description():
     return LaunchDescription([
+        # Perception -> Nav2 bridge: raycasts /perception/costmap to first
+        # visible surfaces and publishes /perception/costmap_cloud, the
+        # ObstacleLayer's observation source. MUST run for Nav2 to see anything.
+        ExecuteProcess(
+            cmd=["python3", os.path.join(_HERE, "costmap_to_cloud.py")],
+            output="screen",
+        ),
         Node(
             package="nav2_controller",
             executable="controller_server",

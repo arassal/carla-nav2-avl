@@ -57,10 +57,11 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument('frames', nargs='+', help='input image files')
     ap.add_argument('--out', default='/tmp/shadow_out', help='overlay dir')
+    _models = os.environ.get('AVL_MODELS_DIR', '/home/dinosaur/models')
     ap.add_argument('--weights',
-                    default='/home/dinosaur/models/twinlite_nano.engine')
+                    default=os.path.join(_models, 'twinlite_nano.engine'))
     ap.add_argument('--repo',
-                    default='/home/dinosaur/models/TwinLiteNetPlus')
+                    default=os.path.join(_models, 'TwinLiteNetPlus'))
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
 

@@ -1,5 +1,9 @@
 # FINALIZE — the prompt that takes this project to done
 
+> **This is an AI-session prompt + project-status ledger, not human-onboarding
+> docs.** New here? Start with `README.md`. This file is useful to skim for the
+> phase plan and what's still open, but it's written to drive an AI session.
+
 Paste this file (or point a session at it) to drive the remaining work.
 Execute phases IN ORDER; each has acceptance criteria — do not advance on
 red. Everything below is verified fact as of 2026-07-07 unless marked open.

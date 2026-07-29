@@ -10,10 +10,16 @@ def generate_launch_description():
                        'config', 'params.yaml')
     rviz = os.path.join(get_package_share_directory('sdc_bringup'),
                         'config', 'sdc.rviz')
-    ws = '/home/merabro/selfdrive_carla_ue5/ros2_ws/src'
+    # self-locate the workspace src/ from this launch file's install path
+    # (was a hardcoded foreign home path). NOTE: sdc_bringup is a legacy/stub
+    # package -- see ros2_ws/README.md; this launch is not on the reproduce path.
+    ws = os.environ.get(
+        'SDC_WS_SRC',
+        os.path.abspath(os.path.join(
+            get_package_share_directory('sdc_bringup'), '..', '..', '..', '..', 'src')))
 
     world = ExecuteProcess(
-        cmd=['/usr/bin/python3.11',
+        cmd=['python3',
              f'{ws}/world_setup/world_setup/world_setup.py'],
         output='screen')
     planner = Node(package='route_planner', executable='route_planner_node',

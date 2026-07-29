@@ -1,11 +1,20 @@
-# Nav2 costmap configuration that consumes this package's perception output.
+# ============================================================================
+# DEPRECATED / REFERENCE ONLY -- do NOT use for bring-up.
 #
-# Two perception inputs are stacked as layers:
+# This config feeds /perception/costmap (a base_link-relative grid) straight
+# into a StaticLayer with subscribe_to_updates: false. StaticLayer/Costmap2D is
+# axis-aligned and places such a grid exactly ONCE, then freezes it as the
+# robot moves -- the exact bug documented in deploy/costmap_odom_republisher.py
+# and real_nav2_params.yaml. It is kept only to show the original (broken)
+# approach.
+#
+# USE config/real_nav2_params.yaml (via deploy/real_nav2_launch.py) instead.
+# ============================================================================
+#
+# Original notes (for the layered design this file was meant to have):
 #   static_layer    <- /perception/costmap         (road vs off-road + cam obstacles)
 #   obstacle_layer  <- /perception/obstacle_points  (lidar, with raytrace clearing)
 #   inflation_layer <- (built-in)                   (grow lethal cells by robot radius)
-#
-# Drop this into your Nav2 bringup (or load it onto the costmap nodes directly).
 # Frames assume the standard map -> odom -> base_link TF tree is being published.
 
 local_costmap:

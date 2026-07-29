@@ -13,7 +13,9 @@ constraints) and PLAN.md for status.
 
 Weights land in `models/`: `yolo11n-seg.pt` (auto-downloaded by
 ultralytics), `yolopv2.pt` (CAIC-AD/YOLOPv2 release), `course.pt`
-(train it: `tools/build_course_dataset.py` then `tools/train_course.py`).
+(**committed** so it runs out of the box, but trained on a small set and weak —
+retrain with your own cone photos via `tools/build_course_dataset.py` then
+`tools/train_course.py` to improve it).
 A missing model degrades gracefully — its classes just don't appear.
 
 ## Layout

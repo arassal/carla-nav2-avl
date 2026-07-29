@@ -41,15 +41,21 @@ built on the target machine (step 4).
    cd ros2_ws && colcon build && source install/setup.bash
    ```
 
-6. **Run.** Sensors + cameras come from the IGVC/avros bringup on the car
-   (`sensors.launch.py`, ZED wrappers); this package adds the costmap and the
-   Nav2 obstacle-avoidance layer:
+6. **Sensor bring-up (PREREQUISITE, separate repo).** Cameras, lidar, IMU,
+   TF, and EKF come from our avros bringup, which is **not** in this repo:
+   https://github.com/Paarseus/IGVC_ROS2 — `ros2 launch avros_bringup
+   sensors.launch.py` plus the ZED wrappers. This publishes the topics the
+   costmap subscribes to (`/zed_*/zed_node/rgb/color/rect/image`,
+   `/velodyne_points`, `odom`→`base_link` TF). Without it there is no sensor
+   data and nothing downstream runs.
+
+7. **Run the costmap + Nav2:**
    ```bash
    # perception costmap:
    ros2 launch perception_costmap perception.launch.py \
         config:=src/perception_costmap/config/perception_dinosaur.yaml
-   # obstacle cloud + Nav2 (see deploy/):
-   python3 src/perception_costmap/deploy/costmap_to_cloud.py &
+   # Nav2 (this launch ALSO auto-starts the obstacle-cloud bridge that feeds
+   # Nav2's ObstacleLayer -- you do not start it separately):
    ros2 launch src/perception_costmap/deploy/real_nav2_launch.py
    ```
 

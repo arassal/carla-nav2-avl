@@ -19,3 +19,10 @@ export AVL_MODELS_DIR=/absolute/path/to/repo/models
 ```
 
 `config/perception_dinosaur.yaml` references models as `${AVL_MODELS_DIR}/...`.
+
+## Why there are two `models/` directories
+- `/models/` (this dir) feeds the **ROS2 `perception_costmap`** package on the car.
+- `/driving_seg/models/` feeds the standalone **`driving_seg`** segmentation package.
+
+`cone_det.pt` is intentionally present in both so each package is
+self-contained; they are the same weights.

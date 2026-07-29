@@ -61,6 +61,10 @@ class CostmapToCloud(Node):
         # marked, so it stays free/unknown and the planner can route around --
         # which is the whole point. Anything genuinely there gets marked as
         # soon as the robot moves and actually observes it.
+        # Coverage: +/-100 deg bearing, 0.3-15 m range. The grid extends to
+        # 16 m forward / +/-10 m lateral, so obstacles beyond 15 m or in the
+        # far rear-lateral corners are not emitted -- acceptable at the 1-2 mph
+        # cap, but widen these if the speed cap or grid extent changes.
         A = np.radians(np.arange(-100.0, 100.5, 0.5))
         R = np.arange(0.3, 15.0, 0.05)
         X = np.cos(A)[:, None] * R[None, :]

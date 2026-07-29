@@ -17,7 +17,12 @@ from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSHistoryPolicy
 from visualization_msgs.msg import Marker, MarkerArray
 from geometry_msgs.msg import Point
 
-GRAPH = '/home/dinosaur/IGVC/install/avros_bringup/share/avros_bringup/config/cpp_campus_graph.geojson'
+import os
+# Route graph geojson. Override with ROUTE_GRAPH env var; the default is the
+# path on our car and will not exist on a fresh clone.
+GRAPH = os.environ.get(
+    'ROUTE_GRAPH',
+    '/home/dinosaur/IGVC/install/avros_bringup/share/avros_bringup/config/cpp_campus_graph.geojson')
 FRAME = 'map'
 
 

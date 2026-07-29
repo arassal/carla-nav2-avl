@@ -1,14 +1,31 @@
-# carla-nav2-avl — feature/alexander
+# carla-nav2-avl
 
-Sim-to-real perception for our autonomous ground vehicle: validate in CARLA
-with the same 3-camera layout as the car, deploy the identical ROS2 stack to
-the car computer ("dinosaur", Jetson AGX Orin, ROS2 Humble). CARLA is
-x86-only and never runs on the Jetson — only the sensor source changes.
+Perception + Nav2 obstacle-avoidance stack for our **IGVC** (Intelligent
+Ground Vehicle Competition) robot — a slow (~1–2 mph) skid-steer vehicle that
+must stay inside painted white lines on a grass course and avoid traffic
+cones. We validate in CARLA with the same 3-camera layout as the car, then
+deploy the identical ROS2 stack to the car computer ("dinosaur", an NVIDIA
+Jetson AGX Orin, ROS2 Humble). CARLA is x86-only and never runs on the Jetson
+— only the sensor source changes.
 
-> New here? Read `CLAUDE.md` next — it says exactly what is real, what is
-> stub, and the conventions that bind changes.
-> Finishing the project? **`FINALIZE.md`** is the ordered master plan
-> (phases, commands, acceptance criteria) to take this to competition-ready.
+### Where to start (read in this order)
+1. **This README** — what the project is, the robot, what's real vs. stub.
+2. **`ros2_ws/src/perception_costmap/DESIGN.md`** — the architecture: how
+   camera+lidar become a costmap Nav2 can plan on.
+3. **`ros2_ws/src/perception_costmap/README.md`** — build, run, and the 39
+   offline tests (run them to confirm your checkout).
+4. **`REPRODUCE.md`** — put it on the actual car: hardware, deps, models, run.
+5. **`ros2_ws/src/perception_costmap/DEPLOY.md`** — Jetson bring-up detail.
+6. **`driving_seg/README.md`** — only if working on cone/white-line segmentation.
+
+> `CLAUDE.md`, `FINALIZE.md`, and `driving_seg/PROMPT.md` are **AI-session
+> prompts / project-status ledgers**, not human tutorials — but `CLAUDE.md`'s
+> real-vs-stub map and `FINALIZE.md`'s phase plan are worth a skim.
+
+**Glossary:** IGVC = Intelligent Ground Vehicle Competition; BEV = bird's-eye
+view; IPM = inverse perspective mapping (homography ground-projection); EKF =
+extended Kalman filter (localization); GMSL = the ZED cameras' serial link;
+REP-103 = ROS's x-forward/y-left frame convention.
 
 ## What's on this branch (all real, tested)
 
@@ -35,8 +52,10 @@ pretrained model knows them. The approach lives in `driving_seg/`:
    augmentation, then fine-tune a nano seg net that generalizes past the
    color heuristic. Full story + how to retrain with photos of OUR cones:
    **`driving_seg/docs/CONE_DETECTION.md`**.
-3. The trained model is committed (`driving_seg/models/course.pt`) — clone
-   and run, no training required.
+3. The trained model is committed (`driving_seg/models/course.pt`) so it runs
+   out of the box — but it was trained on a small set and is **weak**; retrain
+   with photos of your own cones (`driving_seg/tools/build_course_dataset.py`
+   then `train_course.py`, see `driving_seg/docs/CONE_DETECTION.md`) to improve it.
 
 ## Quick starts
 

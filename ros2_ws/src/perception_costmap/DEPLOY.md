@@ -16,8 +16,10 @@ and lidar drivers publishing the same topics.
   (JetPack 5 / Ubuntu 20.04) instead, use a Humble container matching the
   host L4T version (e.g. dustynv/ros:humble-* for the same r35.x tag) —
   container userspace must match the host L4T major version.
-- 8 GB RAM shared CPU/GPU. Add swap before building:
-  `sudo fallocate -l 8G /swap && sudo mkswap /swap && sudo swapon /swap`
+- RAM: the real unit is an **AGX Orin 64 GB** — no swap needed. (These §0–5
+  steps were first written assuming an 8 GB Orin Nano; if you really are on an
+  8 GB board, add swap: `sudo fallocate -l 8G /swap && sudo mkswap /swap &&
+  sudo swapon /swap`. Otherwise skip it. §6 records the real as-deployed unit.)
 - Power: check modes with `sudo nvpmodel -q --verbose`, then select MAXN
   (index varies by board/JetPack — commonly `sudo nvpmodel -m 0`) and
   `sudo jetson_clocks` before benchmarks.
@@ -35,11 +37,25 @@ and lidar drivers publishing the same topics.
     python3 tools/bench_perception.py --frames 50          # hsv baseline
 
 ## 3. Models
-    python3 tools/export_trt.py --weights yolov8n.pt       # ON the Jetson
-    python3 tools/bench_perception.py --frames 50 --yolo-weights yolov8n.engine
+    export AVL_MODELS_DIR="$(git rev-parse --show-toplevel)/models"   # shipped .pt weights
+    python3 tools/export_trt.py --weights "$AVL_MODELS_DIR/yolov8n.pt"    # ON the Jetson
+    python3 tools/export_trt.py --weights "$AVL_MODELS_DIR/cone_det.pt"
+    python3 tools/bench_perception.py --frames 50 --yolo-weights "$AVL_MODELS_DIR/yolov8n.engine"
     # target: yolo stage <= 25 ms (≈2x realtime headroom at 10 Hz with seg)
-    # TwinLiteNet nano: benchmark with --twinlite-*; if too slow on CPU fall
-    # back to hsv until a TensorRT export of it is done.
+
+### Enabling TwinLiteNet (optional — the default is hsv)
+`export_trt.py` only builds YOLO engines. TwinLiteNet road segmentation is
+NOT turn-key and the shipped default is `segmentation_method: hsv`. To enable
+the better segmenter:
+    git clone https://github.com/chequanghuy/TwinLiteNetPlus \
+        "$AVL_MODELS_DIR/TwinLiteNetPlus"          # provides the model class
+    # nano.pth is shipped at $AVL_MODELS_DIR/twinlite_nano.pth; build a
+    # TensorRT engine from it (ONNX export -> trtexec, FP16, input 384x640,
+    # output order img -> (drivable_area, lane_line)) and save it as
+    # $AVL_MODELS_DIR/twinlite_nano.engine
+    # then set segmentation_method: twinlitenet in config/perception_dinosaur.yaml
+Until a real exporter is committed, this remains a manual step; without a valid
+`.engine` the node logs a warning and runs hsv.
 
 ## 4. Sensors
 - Cameras: v4l2_camera / the vendor driver, publishing
@@ -53,7 +69,11 @@ and lidar drivers publishing the same topics.
 - `ros2 topic hz /perception/costmap` >= 8 Hz with the chosen models
 - RViz: road free, person standing in front = lethal within 300 ms, clears
   within 500 ms after they step away (temporal filter working)
-- Nav2 local costmap (config/nav2_costmap_params.yaml) mirrors it.
+- Nav2: bring it up with `deploy/real_nav2_launch.py` (uses
+  `config/real_nav2_params.yaml` and auto-starts the obstacle-cloud bridge).
+  Confirm the local costmap mirrors the perception costmap.
+  NOTE: `config/nav2_costmap_params.yaml` is deprecated/reference-only — do not
+  use it (it feeds a base_link grid to StaticLayer and freezes; see its header).
 
 ## 6. As-deployed on dinosaur (2026-07-02) — what actually happened
 

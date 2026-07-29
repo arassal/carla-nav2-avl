@@ -76,23 +76,27 @@ local_costmap:
       transform_tolerance: 0.3
       plugins: ["obstacle_layer", "inflation_layer"]
 
-      static_layer:
-        plugin: "nav2_costmap_2d::StaticLayer"
-        # odom-frame republish (see costmap_odom_republisher.py) -- the raw
-        # /perception/costmap is base_link-relative, which StaticLayer only
-        # ever places once, never re-placing it as the robot moves. Same bug
-        # found and fixed in the CARLA sim; the existing real-car config
-        # (nav2_costmap_params.yaml) had this bug AND subscribe_to_updates:
-        # false, which would have frozen it at the very first frame forever.
-        map_topic: /perception/costmap_odom
-        subscribe_to_updates: true
-        map_subscribe_transient_local: false
-
+      # NOTE: there is deliberately NO static_layer. An earlier design fed the
+      # perception grid to a StaticLayer via costmap_odom_republisher.py, but
+      # StaticLayer/Costmap2D is axis-aligned and can't represent a rotating
+      # robot-relative grid. The active design instead raycasts the perception
+      # costmap to visible-surface points (costmap_to_cloud.py) and feeds them
+      # to the ObstacleLayer below. costmap_odom_republisher.py is retained only
+      # as a reference alternative and is NOT used on this path.
+      #
+      # ROAD-KEEPING DEPENDENCY: off-road cells only reach Nav2 if perception
+      # marks them at/above costmap_to_cloud's OBST_THRESH (97). That matches
+      # perception_dinosaur.yaml's offroad_cost: 97. If you lower offroad_cost
+      # below 97 (the perception_costmap.yaml default is 65), off-road stops
+      # entering the cloud and road-keeping silently disappears -- keep the two
+      # values in sync.
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: true
-        observation_sources: lidar_obstacles
-        lidar_obstacles:
+        # source is the camera-costmap-derived point cloud, NOT raw lidar
+        # (perception runs use_lidar:false today -- see perception_dinosaur.yaml)
+        observation_sources: costmap_cloud
+        costmap_cloud:
           topic: /perception/costmap_cloud
           data_type: "PointCloud2"
           marking: true
@@ -124,17 +128,13 @@ global_costmap:
       transform_tolerance: 0.3
       plugins: ["obstacle_layer", "inflation_layer"]
 
-      static_layer:
-        plugin: "nav2_costmap_2d::StaticLayer"
-        map_topic: /perception/costmap_odom
-        subscribe_to_updates: true
-        map_subscribe_transient_local: false
-
+      # (see local_costmap note above: no static_layer by design; the
+      # ObstacleLayer's source is the perception-derived cloud, not raw lidar)
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: true
-        observation_sources: lidar_obstacles
-        lidar_obstacles:
+        observation_sources: costmap_cloud
+        costmap_cloud:
           topic: /perception/costmap_cloud
           data_type: "PointCloud2"
           marking: true

@@ -19,7 +19,18 @@ perception_costmap:
     y_max: 10.0
     resolution: 0.1
 
-    segmentation_method: twinlitenet
+    # Road/lane segmentation. Default is 'hsv' because it is the only method
+    # that runs from the shipped artifacts alone. 'twinlitenet' is better but
+    # NOT yet turn-key: it needs the upstream TwinLiteNetPlus repo cloned to
+    # twinlite_repo_path AND a hand-built TensorRT engine (there is no shipped
+    # exporter for it -- see DEPLOY.md "Enabling TwinLiteNet"). If you set
+    # 'twinlitenet' without providing both, the node logs a warning and falls
+    # back to hsv anyway, so the default is set honestly to what actually runs.
+    segmentation_method: hsv
+    # camera-only obstacle detection today. The VLP-16 is wired and publishing
+    # but use_lidar is false -- live avoidance rides on IPM+YOLO, not lidar.
+    # Flip to true (and add a lidar observation source in real_nav2_params.yaml)
+    # to fuse the 360-degree lidar, which is metric and lighting-independent.
     use_camera_obstacles: true
     use_lidar: false
     obstacle_method: yolo
@@ -34,8 +45,12 @@ perception_costmap:
     cone_conf: 0.35
     use_white_lines: true
     yolo_footprint_frac: 0.25
+    # Only used when segmentation_method: twinlitenet (see note above).
+    # repo_path must contain a clone of the upstream TwinLiteNetPlus repo;
+    # twinlite_weights must be a TensorRT .engine (the segmenter dispatches on
+    # the .engine suffix -- a .pth here is NOT auto-used as a fallback).
     twinlite_repo_path: ${AVL_MODELS_DIR}/TwinLiteNetPlus
-    twinlite_weights: ${AVL_MODELS_DIR}/twinlite_nano.engine  # TRT FP16 (nano.pth = pytorch fallback)
+    twinlite_weights: ${AVL_MODELS_DIR}/twinlite_nano.engine
     twinlite_config: nano
     # velodyne is 0.715 m above ground (URDF: xsens_height+0.159); points are
     # in the sensor frame, so ground is at z ≈ -0.715

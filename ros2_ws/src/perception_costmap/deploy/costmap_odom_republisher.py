@@ -2,6 +2,12 @@
 """Resample /perception/costmap (base_link-relative) into an axis-aligned
 odom-frame grid for Nav2's StaticLayer.
 
+NOT ON THE ACTIVE PATH. The shipped Nav2 config (real_nav2_params.yaml) does
+NOT load a StaticLayer -- it consumes the point cloud from costmap_to_cloud.py
+via an ObstacleLayer instead. This node is retained only as a reference
+implementation of the axis-aligned-resample fix; nothing subscribes to its
+/perception/costmap_odom output in the current setup.
+
 TWO separate bugs are being corrected here; the second one is subtle and cost
 us a near-miss on a person standing in the lane.
 
