@@ -1,0 +1,82 @@
+perception_costmap:
+  ros__parameters:
+    # --- input topics (remap lidar_topic; camera topics come from the
+    # per-camera blocks below) ---
+    lidar_topic: /lidar/points
+
+    # --- output topics (consumed by Nav2) ---
+    costmap_topic: /perception/costmap
+    obstacle_points_topic: /perception/obstacle_points
+
+    publish_rate: 10.0
+    frame_id: base_link
+
+    # --- grid extent (metres, robot frame: +x forward, +y left) ---
+    x_min: -4.0
+    x_max: 16.0
+    y_min: -10.0
+    y_max: 10.0
+    resolution: 0.1
+
+    # --- perception ---
+    segmentation_method: hsv      # hsv | twinlitenet (learned, needs torch + weights)
+    use_camera_obstacles: true
+    use_lidar: true
+    # obstacle_method: classical = no deps, yolo = accurate classes + Jetson
+    # .engine path, both = union. yolo/both require `pip install ultralytics`
+    # and fall back to classical (with a warning) if it's missing.
+    obstacle_method: classical
+    yolo_weights: yolov8n.pt      # .pt or .engine (TensorRT, Jetson)
+    yolo_conf: 0.35
+    # course classes (off by default; the real car enables them -- see
+    # config/perception_dinosaur.yaml and FINALIZE.md Phase 1)
+    use_cones: false
+    cone_weights: cone_det.pt
+    cone_conf: 0.35
+    use_white_lines: false
+    yolo_footprint_frac: 0.25
+    # twinlitenet: only used when segmentation_method is twinlitenet; needs a
+    # cloned TwinLiteNetPlus repo + downloaded weights (see
+    # perception/twinLiteNetTest.py), falls back to hsv (with a warning) if
+    # torch/paths/weights are missing.
+    twinlite_repo_path: ""
+    twinlite_weights: ""
+    twinlite_config: nano
+    lidar_z_min: 0.2              # drop ground returns below this height
+    lidar_z_max: 2.5             # drop returns above the roofline
+
+    # --- cameras: multi-camera BEV fusion ---
+    # each name below gets a nested parameter block. "points": 4 image pixels
+    # + their ground positions (calibrate per camera). "camera": derive from
+    # camera_info K + mounting (cam_x/y/height/pitch/yaw).
+    cameras: ["front"]           # real car: ["front", "left", "right"]
+    front:
+      image_topic: /camera/front/image
+      camera_info_topic: /camera/front/camera_info
+      ipm_mode: points           # points | camera
+      ipm_image_pts: [0.0, 160.0, 640.0, 160.0, 640.0, 320.0, 0.0, 320.0]
+      # order pairs image-left with +y (world left, REP-103); values are
+      # placeholders -- calibrate per camera
+      ipm_world_pts: [18.0, 8.0, 18.0, -8.0, 3.0, -4.0, 3.0, 4.0]
+      cam_x: 0.0
+      cam_y: 0.0
+      cam_height: 1.6
+      cam_pitch_deg: 10.0
+      cam_yaw_deg: 0.0
+    # left/right blocks: same keys, yaw +90 / -90, calibrated per camera
+
+    # --- freshness ---
+    # drop stale sensor data instead of building a costmap from a frozen
+    # frame. Freshness compares msg stamps to the node clock: with CARLA's
+    # native ROS2 output set use_sim_time; with tools/carla_feed.py leave it
+    # unset (wall clock on both sides).
+    image_stale_sec: 0.5
+    lidar_stale_sec: 0.5
+
+    # --- temporal obstacle confidence filter ---
+    # per-cell conf accumulates by temporal_hit on detection and decays by
+    # temporal_miss when observed-empty; reported lethal at >= threshold
+    temporal_hit: 0.4
+    temporal_miss: 0.2
+    temporal_threshold: 0.5
+    temporal_enabled: true

@@ -1,0 +1,80 @@
+# Nav2 costmap configuration that consumes this package's perception output.
+#
+# Two perception inputs are stacked as layers:
+#   static_layer    <- /perception/costmap         (road vs off-road + cam obstacles)
+#   obstacle_layer  <- /perception/obstacle_points  (lidar, with raytrace clearing)
+#   inflation_layer <- (built-in)                   (grow lethal cells by robot radius)
+#
+# Drop this into your Nav2 bringup (or load it onto the costmap nodes directly).
+# Frames assume the standard map -> odom -> base_link TF tree is being published.
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      update_frequency: 5.0
+      publish_frequency: 2.0
+      global_frame: odom
+      robot_base_frame: base_link
+      rolling_window: true
+      width: 20
+      height: 20
+      resolution: 0.1
+      robot_radius: 0.5
+      plugins: ["obstacle_layer", "static_layer", "inflation_layer"]
+
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        observation_sources: lidar_obstacles
+        lidar_obstacles:
+          topic: /perception/obstacle_points
+          data_type: "PointCloud2"
+          marking: true
+          clearing: true
+          min_obstacle_height: 0.1
+          max_obstacle_height: 2.5
+          obstacle_max_range: 20.0
+          raytrace_max_range: 25.0
+
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_topic: /perception/costmap
+        subscribe_to_updates: false
+        map_subscribe_transient_local: false
+
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        inflation_radius: 0.8
+        cost_scaling_factor: 3.0
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      update_frequency: 1.0
+      publish_frequency: 1.0
+      global_frame: map
+      robot_base_frame: base_link
+      rolling_window: true        # mapless road-following: no prior global map
+      width: 50
+      height: 50
+      resolution: 0.1
+      robot_radius: 0.5
+      plugins: ["obstacle_layer", "inflation_layer"]
+
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        observation_sources: lidar_obstacles
+        lidar_obstacles:
+          topic: /perception/obstacle_points
+          data_type: "PointCloud2"
+          marking: true
+          clearing: true
+          max_obstacle_height: 2.5
+          obstacle_max_range: 30.0
+          raytrace_max_range: 35.0
+
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        inflation_radius: 0.8
+        cost_scaling_factor: 3.0

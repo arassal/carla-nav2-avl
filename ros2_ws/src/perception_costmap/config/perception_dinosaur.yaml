@@ -1,0 +1,134 @@
+# Real-car config for "dinosaur" (Jetson AGX Orin, 3x ZED X + VLP-16).
+# Camera mounts from avros.urdf.xacro (IGVC repo); model paths are the
+# on-car locations. Launch:
+#   ros2 launch perception_costmap perception.launch.py config:=<this file>
+# See DEPLOY.md §6 for the full bring-up story.
+
+perception_costmap:
+  ros__parameters:
+    lidar_topic: /velodyne_points
+    costmap_topic: /perception/costmap
+    obstacle_points_topic: /perception/obstacle_points
+
+    publish_rate: 10.0
+    frame_id: base_link
+
+    x_min: -4.0
+    x_max: 16.0
+    y_min: -10.0
+    y_max: 10.0
+    resolution: 0.1
+
+    segmentation_method: twinlitenet
+    use_camera_obstacles: true
+    use_lidar: false
+    obstacle_method: yolo
+    yolo_weights: ${AVL_MODELS_DIR}/yolov8n.engine
+    yolo_conf: 0.35
+    # course classes (FINALIZE.md Phase 1): cones lethal, painted white
+    # lines subtracted from drivable. cone weights: driving_seg's committed
+    # detector; export to .engine ON the Jetson (yolo export format=engine)
+    use_cones: true
+    yolo_cameras: ["front"]
+    cone_weights: ${AVL_MODELS_DIR}/cone_det.engine
+    cone_conf: 0.35
+    use_white_lines: true
+    yolo_footprint_frac: 0.25
+    twinlite_repo_path: ${AVL_MODELS_DIR}/TwinLiteNetPlus
+    twinlite_weights: ${AVL_MODELS_DIR}/twinlite_nano.engine  # TRT FP16 (nano.pth = pytorch fallback)
+    twinlite_config: nano
+    # velodyne is 0.715 m above ground (URDF: xsens_height+0.159); points are
+    # in the sensor frame, so ground is at z ≈ -0.715
+    lidar_z_min: -0.5             # 0.2 m above ground
+    lidar_z_max: 1.8              # ~2.5 m above ground
+
+    # --- cameras: mounts from avros.urdf.xacro (verified 2026-04-24) ---
+    # ipm_mode camera: homography derived from CameraInfo K + mounting,
+    # so no per-camera point calibration needed.
+    cameras: ["front", "left", "right"]
+    front:
+      image_topic: /zed_front/zed_node/rgb/color/rect/image
+      camera_info_topic: /zed_front/zed_node/rgb/color/rect/camera_info
+      ipm_mode: camera
+      cam_x: 0.6795
+      cam_y: 0.0
+      cam_height: 0.4476          # xsens_height 0.5556 - 0.108
+      cam_pitch_deg: 17.0     # person-walk calib 2026-07-09 (was 15)
+      cam_yaw_deg: 0.0
+    left:
+      image_topic: /zed_left/zed_node/rgb/color/rect/image
+      camera_info_topic: /zed_left/zed_node/rgb/color/rect/camera_info
+      ipm_mode: camera
+      cam_x: 0.098
+      cam_y: 0.286
+      cam_height: 0.6126          # xsens_height + 0.057
+      cam_pitch_deg: 18.0    # person-walk + brick-VP calib 2026-07-09
+      cam_yaw_deg: 94.0    # person-walk calib 2026-07-09
+    right:
+      image_topic: /zed_right/zed_node/rgb/color/rect/image
+      camera_info_topic: /zed_right/zed_node/rgb/color/rect/camera_info
+      ipm_mode: camera
+      cam_x: 0.098
+      cam_y: -0.286
+      cam_height: 0.6126
+      cam_pitch_deg: 20.0    # person-walk + brick-VP calib 2026-07-09
+      cam_yaw_deg: -86.0    # person-walk calib 2026-07-09
+
+    image_stale_sec: 1.0   # was 0.5: front cam (8 Hz) + tick jitter crossed it, wedge flickered known<->unknown
+    lidar_stale_sec: 0.5
+
+    temporal_hit: 0.4
+    temporal_miss: 0.2
+    temporal_threshold: 0.5
+    temporal_enabled: true
+
+    # --- cost shape (see occupancy.build_cost_array) ---
+    # Leaving the road is a failure, not a shortcut: off-road (grass, curb,
+    # kerb, wall) is near-lethal. Deliberately 97 rather than a hard 100 --
+    # if road segmentation drops out (glare, shadow, wet asphalt) a hard 100
+    # everywhere would leave the planner with no legal cell and strand the
+    # car. 97 is avoided as strongly as an obstacle in practice while keeping
+    # a sliver of escape, and stays visually distinct from a true 100 obstacle.
+    offroad_cost: 97
+    # legacy single-halo params: only used if per-class layers are absent
+    inflation_radius: 0.8
+    cost_scaling_factor: 4.0
+
+    # Approach ramp: inflating INWARD from the off-road region makes cost rise
+    # as the car nears the road edge (~13 at 1.0 m in, ~36 at 0.5 m, 97 at the
+    # boundary) instead of a cliff. This is what gives the lane a gradient to
+    # centre in -- and what makes the costmap fade in colour instead of showing
+    # flat plateaus.
+    road_edge_radius: 1.5
+    road_edge_scaling: 2.0
+
+    # Blind-spot infill: unknown cells are guessed from the surrounding
+    # observed ground (Telea inpainting), blended back toward unknown_cost as
+    # distance from the nearest observation grows (exp falloff, metres). A
+    # camera seam surrounded by road reads as road; the deep rear wedge
+    # honestly degrades to the neutral prior.
+    unknown_infill: true
+    infill_falloff: 2.0
+
+    # Trim each camera's coverage 0.4 m inward at the FOV border. The
+    # outermost image pixels segment unreliably, so the ground strip at each
+    # coverage edge read "observed, not road" -> off-road 97 -> phantom red
+    # bands hugging every blind seam. Trimmed cells become unknown and the
+    # infill guesses them from their neighbourhood instead.
+    fov_edge_trim_m: 0.4
+
+    # Per-class danger zones. Bigger radius + SMALLER scaling = cost stays high
+    # further out. People get a wide, slowly-decaying berth; cars decay fast
+    # because driving within a metre of a parked car is normal, not an error.
+    person_radius: 2.5        # ~47 at 0.5 m, ~22 at 1 m, ~5 at 2 m
+    person_scaling: 1.5
+    vehicle_radius: 1.0       # ~8 at 0.5 m: close passes are fine
+    vehicle_scaling: 5.0
+    cone_radius: 0.6
+    cone_scaling: 5.0
+    generic_radius: 0.8       # unclassified blob: previous default
+    generic_scaling: 4.0
+    # blind spots are traversable with a mild penalty instead of ROS -1
+    # (operator decision 2026-07-09: assume safe unless obstacles nearby --
+    # obstacle inflation still bleeds into blind cells regardless)
+    unknown_cost: 25

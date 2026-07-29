@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dinosaur — live perception</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #21262d;
+    --text: #e6edf3; --muted: #7d8590; --green: #39d353;
+    --mono: 'SF Mono','Consolas','Liberation Mono','Courier New',monospace;
+  }
+  body { background: var(--bg); color: var(--text); font-family: var(--mono); padding: 16px; }
+  header { display: flex; align-items: baseline; justify-content: space-between;
+           border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 16px; flex-wrap: wrap; gap: 6px; }
+  h1 { font-size: 12px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; }
+  .host { font-size: 11px; color: var(--green); }
+  .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+         background: var(--green); margin-right: 6px; box-shadow: 0 0 6px var(--green); }
+  h2 { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+       color: var(--muted); margin: 18px 0 8px; }
+  .row { display: grid; gap: 10px; }
+  .row.hero { grid-template-columns: 1fr 1fr; }
+  .row.cams { grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 800px) { .row.hero, .row.cams { grid-template-columns: 1fr; } }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+  .card img { display: block; width: 100%; height: auto; }
+  .row.hero .card img { height: 300px; object-fit: contain; background: #05070a; }
+  .row.cams .card img { height: 180px; object-fit: contain; background: #05070a; }
+  .label { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+           padding: 7px 9px; border-bottom: 1px solid var(--border);
+           display: flex; justify-content: space-between; }
+  .label .sub { color: var(--muted); text-transform: none; letter-spacing: 0; }
+  .legend { display: flex; gap: 18px; margin-top: 8px; font-size: 10px; color: var(--muted); flex-wrap: wrap; }
+  .legend span::before { content: ""; display: inline-block; width: 9px; height: 9px;
+                          margin-right: 5px; border-radius: 2px; vertical-align: -1px; }
+  .lg-obs::before  { background: #dc3c3c; }
+  .lg-free::before { background: #bebebe; }
+  .lg-unk::before  { background: #2d2d2d; border: 1px solid #444; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Live Perception</h1>
+  <span class="host"><span class="dot"></span>dinosaur &middot; MJPEG streams</span>
+</header>
+
+<h2>Fused BEV + live costmap (forward = up)</h2>
+<div class="row hero">
+  <div class="card">
+    <div class="label">Fused BEV <span class="sub">3 cameras &rarr; one grid</span></div>
+    <img data-src="http://100.93.121.3:8080/stream?topic=/viz/fused_bev&type=mjpeg&quality=80" alt="fused BEV">
+  </div>
+  <div class="card">
+    <div class="label">/perception/costmap <span class="sub">TwinLiteNet + YOLOv8 TRT</span></div>
+    <img data-src="http://100.93.121.3:8080/stream?topic=/viz/costmap_render&type=mjpeg&quality=80" alt="costmap">
+  </div>
+</div>
+<div class="legend">
+  <span class="lg-obs">lethal / obstacle</span>
+  <span class="lg-free">free (drivable)</span>
+  <span class="lg-unk">unknown</span>
+</div>
+
+<h2>Cameras</h2>
+<div class="row cams">
+  <div class="card">
+    <div class="label">Left <span class="sub">+90&deg;</span></div>
+    <img data-src="http://100.93.121.3:8080/stream?topic=/zed_left/zed_node/rgb/color/rect/image&type=mjpeg&quality=60&width=480&height=300" alt="left">
+  </div>
+  <div class="card">
+    <div class="label">Front</div>
+    <img data-src="http://100.93.121.3:8080/stream?topic=/zed_front/zed_node/rgb/color/rect/image&type=mjpeg&quality=60&width=480&height=300" alt="front">
+  </div>
+  <div class="card">
+    <div class="label">Right <span class="sub">&minus;90&deg;</span></div>
+    <img data-src="http://100.93.121.3:8080/stream?topic=/zed_right/zed_node/rgb/color/rect/image&type=mjpeg&quality=60&width=480&height=300" alt="right">
+  </div>
+</div>
+
+<script>
+// MJPEG <img> streams die silently when web_video_server restarts or a
+// phone backgrounds the tab -- re-arm them with a cache-buster.
+function bump(img) {
+  // Plain string concat, NOT the URL/URLSearchParams API: the topic query
+  // param contains literal '/' (e.g. topic=/viz/fused_bev), and reserializing
+  // through URLSearchParams percent-encodes it to %2F, which web_video_server
+  // fails to resolve (stream hangs forever, image stays blank/black).
+  var sep = img.dataset.src.indexOf('?') === -1 ? '?' : '&';
+  img.src = img.dataset.src + sep + 't=' + Date.now();
+}
+document.querySelectorAll('img[data-src]').forEach(function (img) {
+  img.addEventListener('error', function () { setTimeout(function () { bump(img); }, 3000); });
+  bump(img);
+});
+document.addEventListener('visibilitychange', function () {
+  if (!document.hidden) document.querySelectorAll('img[data-src]').forEach(bump);
+});
+</script>
+</body>
+</html>

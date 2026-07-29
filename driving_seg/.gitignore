@@ -1,0 +1,13 @@
+/models/*
+/testdata/
+/datasets/
+/out/
+*.pt
+*.onnx
+*.engine
+__pycache__/
+runs/
+# negations last: gitignore is last-match-wins
+!/models/course.pt
+!/models/cone_det.pt
+!/models/README.md

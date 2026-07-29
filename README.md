@@ -1,109 +1,64 @@
-# CARLA Nav2 - Autonomous Navigation Stack
+# carla-nav2-avl — feature/alexander
 
-A complete autonomous navigation system built on CARLA, ROS2, and Navigation2. Designed for simulation validation before real hardware deployment.
+Sim-to-real perception for our autonomous ground vehicle: validate in CARLA
+with the same 3-camera layout as the car, deploy the identical ROS2 stack to
+the car computer ("dinosaur", Jetson AGX Orin, ROS2 Humble). CARLA is
+x86-only and never runs on the Jetson — only the sensor source changes.
 
-## What This Does
+> New here? Read `CLAUDE.md` next — it says exactly what is real, what is
+> stub, and the conventions that bind changes.
+> Finishing the project? **`FINALIZE.md`** is the ordered master plan
+> (phases, commands, acceptance criteria) to take this to competition-ready.
 
-Three-camera multi-view perception system generates occupancy grids in real-time. The stack builds costmaps from sensor data, plans collision-free paths, and controls the vehicle to follow them. Everything runs through standard ROS2 topics so you can swap the simulator for real hardware without changing the core logic.
+## What's on this branch (all real, tested)
 
-## The Setup
+| where | what | start here |
+|---|---|---|
+| `ros2_ws/src/perception_costmap/` | camera+lidar → Nav2 costmap. Multi-camera BEV fusion, TwinLiteNet road seg, YOLOv8-TensorRT obstacles, temporal filter. 39 offline tests. | its `README.md`, then `DESIGN.md` |
+| `ros2_ws/src/perception_costmap/deploy/` | on-car ops: full-stack bringup (tmux), GMSL camera recovery, boot-time systemd unit, live phone dashboard | `deploy/README.md` |
+| `driving_seg/` | **NEW: multi-model driving segmentation — area highlighting, no bounding boxes.** People, vehicles, signs, lights, road, lanes, **cones**, white lines. 74 FPS on an RTX 5090; TensorRT path for the Jetson. | `driving_seg/README.md` and **`driving_seg/docs/CONE_DETECTION.md`** |
+| `perception/` | Adam Castillo's original prototype scripts the package grew from (credits preserved) | — |
 
-**Cameras**: Front, left, right views. Each captures 1280×720 at 30 Hz. This gives you coverage of obstacles in the immediate vicinity and lane boundaries.
+Not real yet (don't build on): `collision_guard`, `route_planner`,
+`sdc_common`, `controller`, `sdc_bringup` — stubs, see `CLAUDE.md`.
 
-**Lidar**: 64-ray lidar gives you a proper 3D view of the environment. The costmap layer fuses this with camera data to build a 2D occupancy grid. Obstacle inflation handles safety margins automatically.
+## Cone detection — the 60-second version
 
-**Costmap**: 100×100 meter grid centered on the vehicle. Free space is 0, obstacles are 255, unknown is 128. The planner uses this to find paths that avoid collisions.
+We need cones (and painted white course lines) segmented as *areas*, and no
+pretrained model knows them. The approach lives in `driving_seg/`:
 
-**Planning**: Standard A* on the costmap. Produces a path as a sequence of waypoints. The controller follows it using pure pursuit steering with adaptive lookahead.
+1. `driving_seg/` runs three specialized models in parallel and fuses them:
+   COCO nano-seg (people/vehicles/signs), YOLOPv2 (road/lanes), and a
+   **fine-tuned cone+line model** we train ourselves.
+2. Training data is built by *self-distillation*: scrape freely-licensed
+   photos, auto-label cones by color+geometry, multiply them with copy-paste
+   augmentation, then fine-tune a nano seg net that generalizes past the
+   color heuristic. Full story + how to retrain with photos of OUR cones:
+   **`driving_seg/docs/CONE_DETECTION.md`**.
+3. The trained model is committed (`driving_seg/models/course.pt`) — clone
+   and run, no training required.
 
-**Control Loop**: Vehicle command is a `Twist` message (linear velocity, angular velocity). This gets converted to steering angle and throttle for the simulator, or CAN commands for real hardware.
+## Quick starts
 
-## Why This Matters
+Perception costmap (no ROS needed for tests):
 
-Most hobby autonomous driving projects build closed-loop simulators with custom pathfinding and hand-tuned steering gains. This is production-grade: you're using the same stack that real autonomous vehicles use. Navigation2 is maintained by a large community. Your control gains are tunable parameters, not magic numbers in Python. When you move to hardware, you're not rewriting everything.
+    cd ros2_ws/src/perception_costmap
+    PYTHONPATH=. python3 -m pytest test -q          # 39 passed
 
-## Architecture
+Driving segmentation demo (any machine with a GPU):
 
-Four layers that cleanly separate concerns:
+    cd driving_seg
+    pip install ultralytics
+    curl -L -o models/yolopv2.pt https://github.com/CAIC-AD/YOLOPv2/releases/download/V0.0.1/yolopv2.pt
+    PYTHONPATH=. python3 -m driving_seg.demo --source <image-or-video> --out out/
 
-1. **Hardware**: GPU, cameras, lidar, compute. CARLA in simulation, real hardware later.
-2. **ROS2**: DDS middleware. Sensors publish messages. Nodes communicate through topics. No direct function calls.
-3. **Navigation2**: Costmap generation, path planning, controller. All pluggable components.
-4. **Application**: CARLA bridge that owns the simulation tick, converts Twist commands to vehicle control.
-
-The key insight: layers 2-4 don't change when you swap layer 1 from CARLA to real hardware.
-
-## Tech Stack
-
-- **CARLA 0.10.0** (UE5): High-fidelity simulator with native ROS2 sensor publishing
-- **ROS2 Humble**: Mature, stable middleware
-- **Navigation2**: Industry standard for mobile robot navigation
-- **Python 3.10/3.11**: Bridge and custom nodes
-- **Ubuntu 22.04**: Stable OS, good ROS2 support
-
-## Quick Start
-
-```bash
-git clone https://github.com/arassal/carla-nav2-avl.git
-cd carla-nav2-avl
-
-# Start CARLA
-cd ~/carla && ./CarlaUE4.sh -quality-level=Low
-
-# Build and run the stack
-cd carla-nav2-avl/ros2_ws
-colcon build
-source install/setup.bash
-../scripts/run_stack.sh
-```
-
-## Requirements
-
-- Ubuntu 22.04
-- ROS2 Humble
-- CARLA 0.10.0 (built from source)
-- NVIDIA GPU (RTX 5090 tested, RTX 5070 Ti works)
-- 32GB RAM, 12GB VRAM minimum
-- CUDA 12.x
-
-## What Works
-
-- Lane following on any CARLA town using the OpenDRIVE map
-- Obstacle detection from lidar, stops the vehicle if something's in the way
-- Traffic light enforcement (reads light state, stops on red)
-- Multi-camera perception without any custom vision code
-- Costmap generation updates in real-time as the vehicle moves
-- Full ROS2 integration (everything on standard topics)
-
-## Tested Scenarios
-
-- All CARLA towns (Town01-Town10)
-- Different weather (rain, fog, night)
-- Heavy traffic, pedestrians crossing
-- Edge cases like occlusion, parked vehicles
-
-## Repository
-
-- Main code: `ros2_ws/src/`
-- CARLA bridge: `world_setup/`
-- Nav2 configuration: `scripts/nav2.yaml`
-- Custom nodes: `controller/`
+On the car (dinosaur): the whole stack auto-starts on boot
+(`percept-stack.service`); manual restart via
+`ros2_ws/src/perception_costmap/deploy/full_stack_restart.sh`;
+live view at `http://<car-ip>:8090`, joystick at `https://<car-ip>:8000`.
 
 ## Team
 
-- **alexander** (@arassal) — CARLA integration, architecture
-- **jchy05** — Nav2 configuration and tuning
-- **AdamCastillo07** — Visualization and debugging
-- **adrian** (@Ad-Tap) — Control system refinement
-
-See `CONTRIBUTORS.md` and `CONTRIBUTION_GUIDE.md` for details.
-
-## Next Steps
-
-Currently validated in simulation. Real hardware integration is in progress. The architecture supports it directly: swap the CARLA bridge for a real vehicle interface, keep everything else.
-
----
-
-Code: https://github.com/arassal/carla-nav2-avl
-
-Documentation: See `CONTRIBUTION_GUIDE.md` for development workflow.
+alexander (arassal) leads this branch; jchy05, AdamCastillo07, Ad-Tap have
+their own feature branches. Commit style and conventions: see `CLAUDE.md`.
+Development workflow: `CONTRIBUTION_GUIDE.md`.

@@ -1,0 +1,362 @@
+Panels:
+  - Class: rviz_common/Displays
+    Help Height: 0
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Global Options1
+        - /CostmapRGB1
+      Splitter Ratio: 0.5
+    Tree Height: 140
+  - Class: rviz_common/Views
+    Expanded:
+      - /Current View1
+    Name: Views
+    Splitter Ratio: 0.5
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.25
+      Cell Size: 1
+      Class: rviz_default_plugins/Grid
+      Color: 90; 95; 105
+      Enabled: true
+      Line Style:
+        Line Width: 0.029999999329447746
+        Value: Lines
+      Name: Grid1m
+      Normal Cell Count: 0
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Plane: XY
+      Plane Cell Count: 24
+      Reference Frame: <Fixed Frame>
+      Value: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/PointCloud2
+      Color: 255; 255; 255
+      Color Transformer: RGB8
+      Decay Time: 0
+      Enabled: true
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 4096
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Name: CostmapRGB
+      Position Transformer: XYZ
+      Selectable: false
+      Size (Pixels): 3
+      Size (m): 0.10000000149011612
+      Style: Boxes
+      Topic:
+        Depth: 1
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /viz/costmap_rgb
+      Use Fixed Frame: true
+      Use rainbow: true
+      Value: true
+    - Alpha: 1
+      Class: rviz_default_plugins/RobotModel
+      Collision Enabled: false
+      Description File: ""
+      Description Source: Topic
+      Description Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /robot_description
+      Enabled: true
+      Links:
+        All Links Enabled: true
+        Expand Joint Details: false
+        Expand Link Details: false
+        Expand Tree: false
+        Link Tree Style: Links in Alphabetic Order
+        base_footprint:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        base_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        imu_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        velodyne:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        zed_front_camera_center:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        zed_front_camera_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        zed_front_left_camera_frame:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        zed_front_left_camera_frame_optical:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        zed_front_right_camera_frame:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        zed_front_right_camera_frame_optical:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        zed_left_camera_center:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        zed_left_camera_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        zed_left_left_camera_frame:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        zed_left_left_camera_frame_optical:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        zed_left_right_camera_frame:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        zed_left_right_camera_frame_optical:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        zed_right_camera_center:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        zed_right_camera_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        zed_right_left_camera_frame:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        zed_right_left_camera_frame_optical:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        zed_right_right_camera_frame:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        zed_right_right_camera_frame_optical:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+      Mass Properties:
+        Inertia: false
+        Mass: false
+      Name: RobotModel
+      TF Prefix: ""
+      Update Interval: 0
+      Value: true
+      Visual Enabled: true
+    - Class: rviz_default_plugins/TF
+      Enabled: false
+      Frame Timeout: 15
+      Frames:
+        All Enabled: true
+      Marker Scale: 0.6000000238418579
+      Name: TF
+      Show Arrows: false
+      Show Axes: true
+      Show Names: true
+      Tree:
+        {}
+      Update Interval: 0
+      Value: false
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/PointCloud2
+      Color: 200; 200; 255
+      Color Transformer: FlatColor
+      Decay Time: 0
+      Enabled: false
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 4096
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Name: ObstaclePoints
+      Position Transformer: XYZ
+      Selectable: false
+      Size (Pixels): 3
+      Size (m): 0.05000000074505806
+      Style: Points
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /perception/obstacle_points
+      Use Fixed Frame: true
+      Use rainbow: true
+      Value: false
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: FrontRGB
+      Normalize Range: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /zed_front/zed_node/rgb/color/rect/image
+      Value: true
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: LeftRGB
+      Normalize Range: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /zed_left/zed_node/rgb/color/rect/image
+      Value: true
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: RightRGB
+      Normalize Range: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /zed_right/zed_node/rgb/color/rect/image
+      Value: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/PointCloud2
+      Color: 40; 170; 255
+      Color Transformer: FlatColor
+      Decay Time: 0
+      Enabled: false
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 4096
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Name: DepthObstaclePoints
+      Position Transformer: XYZ
+      Selectable: false
+      Size (Pixels): 6
+      Size (m): 0.10000000149011612
+      Style: Points
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /perception/depth_obstacle_points
+      Use Fixed Frame: true
+      Use rainbow: true
+      Value: false
+  Enabled: true
+  Global Options:
+    Background Color: 20; 21; 24
+    Fixed Frame: base_link
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/FocusCamera
+    - Class: rviz_default_plugins/Measure
+      Line color: 128; 128; 0
+  Transformation:
+    Current:
+      Class: rviz_default_plugins/TF
+  Value: true
+  Views:
+    Current:
+      Angle: -1.5707999467849731
+      Class: rviz_default_plugins/TopDownOrtho
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.05999999865889549
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
+      Invert Z Axis: false
+      Name: Current View
+      Near Clip Distance: 0.009999999776482582
+      Scale: 26
+      Target Frame: base_link
+      Value: TopDownOrtho (rviz_default_plugins)
+      X: 6
+      Y: 0
+    Saved: ~
+Window Geometry:
+  Displays:
+    collapsed: false
+  FrontRGB:
+    collapsed: false
+  Height: 736
+  Hide Left Dock: false
+  Hide Right Dock: true
+  LeftRGB:
+    collapsed: false
+  QMainWindow State: 000000ff00000000fd00000001000000000000019b0000028afc0200000005fb0000000e004c006500660074005200470042010000003b000000bb0000002800fffffffb0000001000460072006f006e007400520047004201000000fc000000280000002800fffffffb0000001000520069006700680074005200470042010000012a000000280000002800fffffffb000000100044006900730070006c0061007900730100000158000000c7000000c700fffffffb0000000a005600690065007700730100000225000000a0000000a000ffffff000003190000028a00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  RightRGB:
+    collapsed: false
+  Views:
+    collapsed: false
+  Width: 1210
+  X: 70
+  Y: 27
