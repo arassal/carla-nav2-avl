@@ -1,0 +1,8 @@
+# Canonicalize author identities for the contributors view.
+#
+# The Jetson's global git identity was cbmusonda <cbmusonda@cpp.edu>, so work
+# done on the car got committed under that name by mistake. Map it to the
+# actual author. Also coalesce Alexander's own name variants (same email) into
+# one identity so the contributor list isn't split three ways.
+Alexander Assal <alexander@assalfamily.com> <alexander@assalfamily.com>
+Alexander Assal <alexander@assalfamily.com> <cbmusonda@cpp.edu>
