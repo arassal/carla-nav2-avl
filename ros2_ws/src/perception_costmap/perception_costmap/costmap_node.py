@@ -16,6 +16,7 @@ occupancy); this file is just the ROS plumbing.
 import cv2
 import numpy as np
 
+import os
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
@@ -165,6 +166,13 @@ class CostmapNode(Node):
             ("unknown_cost", -1),
         ])
         g = {k.name: k.value for k in p}
+        # Portable model paths: expand ${AVL_MODELS_DIR} and ~ so the
+        # committed config works on any machine (see models/README.md).
+        # Bare filenames / empty values pass through unchanged.
+        for _k in ("yolo_weights", "cone_weights",
+                   "twinlite_weights", "twinlite_repo_path"):
+            if g.get(_k):
+                g[_k] = os.path.expanduser(os.path.expandvars(g[_k]))
 
         self.grid = GridSpec(
             x_min=g["x_min"], x_max=g["x_max"],

@@ -7,13 +7,21 @@
 # Instead: poll until some X display exists, run RViz on it, and if that
 # session goes away (client disconnects, display torn down, RViz closed), fall
 # back to waiting so it comes up again on the next connect.
+export ROS_DOMAIN_ID=0
 source /opt/ros/humble/setup.bash
 source /home/dinosaur/IGVC/install/setup.bash
 source /home/dinosaur/carla-nav2-avl/ros2_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export CYCLONEDDS_URI=file:///home/dinosaur/IGVC/install/avros_bringup/share/avros_bringup/config/cyclonedds.xml
+# NoMachine virtual displays expose no usable hardware GL context -- rviz2
+# segfaults with "libGL error: failed to create drawable" on startup.
+# Force the Mesa software rasterizer: slower, but it actually renders.
+export LIBGL_ALWAYS_SOFTWARE=1
+export __GLX_VENDOR_LIBRARY_NAME=mesa
+export GALLIUM_DRIVER=llvmpipe
+export QT_X11_NO_MITSHM=1
 
-CFG=/home/dinosaur/carla-nav2-avl/ros2_ws/src/perception_costmap/deploy/costmap_live.rviz
+CFG=/home/dinosaur/carla-nav2-avl/ros2_ws/src/perception_costmap/deploy/costmap_cams.rviz
 
 while true; do
   sock=""

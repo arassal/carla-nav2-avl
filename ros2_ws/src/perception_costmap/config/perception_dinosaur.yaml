@@ -23,19 +23,19 @@ perception_costmap:
     use_camera_obstacles: true
     use_lidar: false
     obstacle_method: yolo
-    yolo_weights: /home/dinosaur/models/yolov8n.engine
+    yolo_weights: ${AVL_MODELS_DIR}/yolov8n.engine
     yolo_conf: 0.35
     # course classes (FINALIZE.md Phase 1): cones lethal, painted white
     # lines subtracted from drivable. cone weights: driving_seg's committed
     # detector; export to .engine ON the Jetson (yolo export format=engine)
     use_cones: true
     yolo_cameras: ["front"]
-    cone_weights: /home/dinosaur/models/cone_det.engine
+    cone_weights: ${AVL_MODELS_DIR}/cone_det.engine
     cone_conf: 0.35
     use_white_lines: true
     yolo_footprint_frac: 0.25
-    twinlite_repo_path: /home/dinosaur/models/TwinLiteNetPlus
-    twinlite_weights: /home/dinosaur/models/twinlite_nano.engine  # TRT FP16 (nano.pth = pytorch fallback)
+    twinlite_repo_path: ${AVL_MODELS_DIR}/TwinLiteNetPlus
+    twinlite_weights: ${AVL_MODELS_DIR}/twinlite_nano.engine  # TRT FP16 (nano.pth = pytorch fallback)
     twinlite_config: nano
     # velodyne is 0.715 m above ground (URDF: xsens_height+0.159); points are
     # in the sensor frame, so ground is at z ≈ -0.715
