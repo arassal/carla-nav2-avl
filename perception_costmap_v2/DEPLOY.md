@@ -103,17 +103,61 @@ default is correct for this server build.
 
 ## 3. Calibrate each camera
 
+The `--fx 500 --fy 500 --pitch 12` in this tool's docstring are
+placeholders, NOT the values for `carla_feed.py`'s camera. Derive them:
+
+- `carla_feed.py` uses 640x480 at FOV 90 with no Rotation, so
+  `fx = fy = (W/2)/tan(FOV/2) = 320`, `cx = 320`, `cy = 240`, `pitch = 0`.
+- `--cam-x 1.5` -- the camera's forward mount offset, or every distance is
+  off by 1.5 m.
+- `--cam-height` is the camera's height **above the road surface**, which is
+  NOT the 1.6 in `CAMERA_MOUNT_Z`. See below.
+
 ```bash
 PYTHONPATH=. python3 tools/ipm_overlay.py --image /tmp/carla_eval_frames/rgb_000010.png \
-    --fx 500 --fy 500 --cx 320 --cy 240 --cam-height 1.6 --pitch 12 \
+    --fx 320 --fy 320 --cx 320 --cy 240 --cam-height 1.939 --cam-x 1.5 --pitch 0 \
     --out /tmp/overlay.png
 ```
+
+### cam-height is measured from the road, not from the vehicle origin
+
+A CARLA vehicle's actor origin floats above the road. Sensors mount
+relative to that origin, so a camera at `Location(z=1.6)` sits ~1.9 m above
+the road, not 1.6 m. Feeding the mount offset instead of the true height is
+a silent systematic error:
+
+| `--cam-height` | max reprojection error vs CARLA ground truth |
+|---|---|
+| 1.600 (mount offset) | 43.38 px |
+| 1.939 (true height, that run) | 0.00 px |
+
+**Do not copy 1.939.** The origin offset depends on the vehicle blueprint
+and on how far the suspension has settled -- across runs of the same
+blueprint on Town10HD_Opt it measured 0.275, 0.307, 0.338, 0.339 m, i.e.
+cam-height 1.875 to 1.939. Measure it in the same session you calibrate in:
+
+```python
+tf = ego.get_transform(); ct = cam.get_transform()
+road_z = world.get_map().get_waypoint(tf.location, project_to_road=True).transform.location.z
+print(ct.location.z - road_z)      # <-- this is --cam-height
+```
+
+The same offset applies to `LIDAR_MOUNT_Z = 1.8`, which feeds
+`carla_lidar_to_rep103(sensor_z=...)`.
+
+Verified 2026-07-30 on Town10HD_Opt: with the true height, the homography
+reproduces CARLA's own projection of 9 ground probes (5-16 m, +/-3 m
+lateral) to 0.00 px on both axes, including the left-handed-to-REP-103
+lateral sign. The homography implementation itself is correct; only the
+height parameter was ever in question.
 
 Open `/tmp/overlay.png` and confirm the drawn 1m grid lines land where a
 tape measure would put them. Do this for every camera before trusting
 anything downstream -- a bad homography poisons the whole costmap and is
 invisible in RViz (the road looks fine, obstacles look fine, they're just
-all in the wrong place).
+all in the wrong place). The overlay is a human sanity check; the probe
+comparison above is the objective one, and is worth scripting for a real
+camera whenever ground-truth geometry is available.
 
 ## 4. Measure segmenter accuracy
 
