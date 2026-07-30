@@ -146,11 +146,25 @@ def draw_grid_on_image(img_bgr, H, grid: GridSpec, spacing_m=1.0):
     Hinv = np.linalg.inv(H)
     h, w = img_bgr.shape[:2]
 
+    # Ground cells behind the camera have negative depth and a flipped
+    # homogeneous w, so they re-project as "mirror" points above the horizon
+    # -- with x_min < 0 that painted a second grid across the sky and made
+    # the overlay useless for the one thing it exists to check. The sign of w
+    # at a point certainly in front (far edge of the grid, on the centreline)
+    # tells us which sign means "in front"; drop the rest. Same mirror effect
+    # that camera_obstacle_mask_to_grid clips with known_mask.
+    def _w(x, y):
+        col = (x - grid.x_min) / grid.resolution
+        row = (y - grid.y_min) / grid.resolution
+        return (Hinv @ np.array([col, row, 1.0]))[2]
+
+    w_ref = _w(grid.x_max, 0.0)
+
     def world_to_px(x, y):
         col = (x - grid.x_min) / grid.resolution
         row = (y - grid.y_min) / grid.resolution
         p = Hinv @ np.array([col, row, 1.0])
-        if abs(p[2]) < 1e-9:
+        if abs(p[2]) < 1e-9 or p[2] * w_ref <= 0:
             return None
         u, v = p[0] / p[2], p[1] / p[2]
         if -w <= u <= 2 * w and -h <= v <= 2 * h:
