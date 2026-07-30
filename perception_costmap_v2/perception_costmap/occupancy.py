@@ -131,6 +131,37 @@ DEFAULT_ROAD_EDGE_RADIUS = 1.5
 DEFAULT_ROAD_EDGE_SCALING = 2.0
 
 
+_INPAINT_RADIUS = 3
+# cv2.inpaint's Telea implementation walks a fixed-size neighbourhood around
+# every pixel on the unknown/known boundary. On an array with fewer rows or
+# columns than that neighbourhood it runs off the end of the buffer: on
+# OpenCV 4.6.0 a 1-row input returns a *different* result on every call for
+# identical input (uninitialised memory), which surfaced as an intermittent
+# infill test failure that passed in isolation and failed in a full run.
+# Newer OpenCV builds happen not to show it -- that makes it a silent
+# correctness hazard on the Jetson, which pins an older OpenCV. Padding the
+# input up to a safe size costs nothing and makes the result deterministic
+# and version-independent.
+_INPAINT_MIN_DIM = 2 * _INPAINT_RADIUS + 1
+
+
+def _inpaint_telea(src_img: np.ndarray, unknown_u8: np.ndarray) -> np.ndarray:
+    h, w = src_img.shape[:2]
+    pad_y = max(0, (_INPAINT_MIN_DIM - h + 1) // 2)
+    pad_x = max(0, (_INPAINT_MIN_DIM - w + 1) // 2)
+    if pad_y == 0 and pad_x == 0:
+        return cv2.inpaint(src_img, unknown_u8, _INPAINT_RADIUS, cv2.INPAINT_TELEA)
+
+    pad = ((pad_y, pad_y), (pad_x, pad_x))
+    # edge-replicate the cost field so the padding carries the same values as
+    # the border it extends; the padded ring is marked known so inpainting
+    # treats it as observed ground rather than more hole to fill.
+    src_p = np.pad(src_img, pad, mode="edge")
+    unk_p = np.pad(unknown_u8, pad, mode="constant", constant_values=0)
+    out = cv2.inpaint(src_p, unk_p, _INPAINT_RADIUS, cv2.INPAINT_TELEA)
+    return out[pad_y:pad_y + h, pad_x:pad_x + w]
+
+
 def infill_unknown(cost: np.ndarray, known_mask: np.ndarray,
                    resolution: float, prior: float = 25.0,
                    falloff_m: float = 2.0) -> np.ndarray:
@@ -157,8 +188,7 @@ def infill_unknown(cost: np.ndarray, known_mask: np.ndarray,
         return cost
 
     src_img = np.clip(cost, 0, LETHAL).astype(np.uint8)
-    inpainted = cv2.inpaint(src_img, unknown.astype(np.uint8), 3,
-                            cv2.INPAINT_TELEA).astype(np.float64)
+    inpainted = _inpaint_telea(src_img, unknown.astype(np.uint8)).astype(np.float64)
 
     dist_m = cv2.distanceTransform(unknown.astype(np.uint8),
                                    cv2.DIST_L2, 5) * resolution
