@@ -31,6 +31,12 @@ pip install -r requirements.txt --break-system-packages   # or a venv
 # the 68 passed / 0 failed we got in the no-GPU sandbox)
 PYTHONPATH=. python3 -m pytest test -q
 
+# if a ROS2 environment is sourced, pytest auto-loads ROS's launch_testing
+# plugins and dies before collection ("No module named 'lark'", or
+# "unknown hook 'pytest_launch_collect_makemodule'"). That is the ambient
+# ROS install, not this suite -- disable the entrypoint:
+PYTHONPATH=. python3 -m pytest test -q -p no:launch_testing_ros_pytest_entrypoint
+
 # confirm the synthetic demo still renders (sanity check before touching
 # real CARLA -- if this fails, something about YOUR environment differs
 # from the sandbox, not CARLA)
@@ -41,14 +47,38 @@ PYTHONPATH=. python3 tools/synthetic_demo.py
 
 ```bash
 # terminal 1: start the simulator
-cd ~/carla && ./CarlaUE4.sh -quality-level=Low
+DISPLAY=:0 ~/CARLA_0.9.16/CarlaUE4.sh -windowed -ResX=960 -ResY=540
 
 # terminal 2: source ROS2, then run the feed
-source /opt/ros/humble/setup.bash
-pip install carla==0.9.16 --break-system-packages   # match your server build
-PYTHONPATH=. python3 tools/carla_feed.py --host 127.0.0.1 --port 2000 \
+source /opt/ros/jazzy/setup.bash
+PYTHONNOUSERSITE=1 PYTHONPATH=.:$PYTHONPATH python3 tools/carla_feed.py \
+    --host 127.0.0.1 --port 2000 \
     --dump-dir /tmp/carla_eval_frames --dump-every 10
 ```
+
+### Environment gotchas on the AVL sim box (verified 2026-07-30)
+
+These cost an hour the first time; none of them are bugs in this package.
+
+- **Do not pass `-quality-level=Low` or `-opengl`.** UE4 crashes at startup
+  with `FUnixPlatformMisc::RequestExitWithStatus` (shader compile failure).
+  For low GPU load, set `settings.no_rendering_mode = True` through the
+  Python API after connecting instead.
+- **ROS2 here is Jazzy, not Humble** -- `/opt/ros/jazzy/setup.bash`.
+- **Use `/usr/bin/python3` (3.12), not the conda python3** on `PATH`
+  (3.13). rclpy's C extension and the `carla` wheel are only installed for
+  the system interpreter.
+- **`PYTHONPATH=.` alone breaks rclpy.** It replaces rather than prepends,
+  so ROS2's site-packages drop off `sys.path` and `carla_feed.py` exits with
+  "rclpy/sensor_msgs not importable". Always `PYTHONPATH=.:$PYTHONPATH`.
+- **numpy conflict on the `--dump-dir` path.** `~/.local` has numpy 2.5.1,
+  which shadows the system numpy 1.26.4 that the system cv2 4.6.0 was
+  compiled against, so `import cv2` inside the lidar callback dies with
+  "numpy.core.multiarray failed to import" -- publishing keeps working and
+  only the PNG dump silently fails. `PYTHONNOUSERSITE=1` selects the
+  consistent system pair; note it also hides the `carla` wheel (it lives in
+  `~/.local`), so symlink `carla` and `carla.libs` into a scratch directory
+  and add that to `PYTHONPATH`.
 
 Watch the console for the first-frame line:
 
@@ -58,7 +88,18 @@ semantic tags observed this frame: [...]
 
 Verify those ids actually correspond to Roads/RoadLines before trusting
 `carla_convert.semantic_to_road_mask`'s default `road_tags=(1, 24)` --
-CARLA's tag ids have changed across versions before.
+CARLA's tag ids have changed across versions before. If the line scrolls
+past, recover the same information from the dumped frames:
+
+```bash
+python3 -c "import cv2,numpy as np,glob; \
+im=cv2.imread(sorted(glob.glob('/tmp/carla_eval_frames/sem_*.png'))[0]); \
+print(np.unique(im[:,:,2]))"
+```
+
+Measured on Town10HD_Opt with CARLA 0.9.16 (2026-07-30): tag 1 covered
+43.4% of the first frame and tag 24 covered 2.4%, i.e. the `(1, 24)`
+default is correct for this server build.
 
 ## 3. Calibrate each camera
 
