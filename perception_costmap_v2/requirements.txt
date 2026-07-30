@@ -1,0 +1,10 @@
+# Core (required to import perception_costmap and run the offline test suite)
+numpy
+opencv-python-headless
+pytest
+
+# Optional, lazily imported -- only needed for the corresponding feature:
+# ultralytics        # YOLOv8 object detection (obstacle_method: yolo)
+# torch               # TwinLiteNet+ road segmentation (segmentation_method: twinlitenet)
+# carla==0.9.16       # tools/carla_feed.py -- x86 sim box only, never on the Jetson
+# rclpy, sensor_msgs, nav_msgs, geometry_msgs   # ROS2 Humble -- costmap_node.py / tools launch

@@ -1,0 +1,105 @@
+# perception_costmap node configuration.
+#
+# cameras: [...] lists the active camera names; each name gets its own
+# nested block below (rclpy flattens nested YAML to dotted params, e.g.
+# `front.image_topic`). Start with just `front` in CARLA / single-camera
+# dev; add `left`/`right` for the real 3-camera car (Task 6 / DESIGN.md).
+#
+# ipm_mode: "points" (4 clicked ground correspondences -- robust, works on
+# any camera, requires tools/ipm_overlay.py calibration) or "camera"
+# (analytic from intrinsics + mounting -- exact in CARLA, must be verified
+# against a real frame before trusting it on hardware).
+
+perception_costmap_node:
+  ros__parameters:
+    use_sim_time: true
+
+    cameras: ["front"]
+
+    front:
+      image_topic: /camera/front/image
+      camera_info_topic: /camera/front/camera_info
+      max_age_sec: 0.5
+      ipm_mode: camera            # or "points"
+      cam_x: 1.5
+      cam_y: 0.0
+      cam_height: 1.6
+      cam_pitch_deg: 12.0
+      cam_yaw_deg: 0.0
+      # points-mode alternative (used when ipm_mode: points):
+      # ipm_image_pts: [[100,480],[540,480],[220,300],[420,300]]
+      # ipm_world_pts: [[2.0,-1.5],[2.0,1.5],[8.0,-1.5],[8.0,1.5]]
+
+    # Real car 3-camera layout (uncomment + add to `cameras:` above once
+    # each is calibrated with tools/ipm_overlay.py):
+    # left:
+    #   image_topic: /camera/left/image
+    #   camera_info_topic: /camera/left/camera_info
+    #   max_age_sec: 0.5
+    #   ipm_mode: camera
+    #   cam_x: 0.3
+    #   cam_y: 0.5
+    #   cam_height: 1.4
+    #   cam_pitch_deg: 10.0
+    #   cam_yaw_deg: 60.0
+    # right:
+    #   image_topic: /camera/right/image
+    #   camera_info_topic: /camera/right/camera_info
+    #   max_age_sec: 0.5
+    #   ipm_mode: camera
+    #   cam_x: 0.3
+    #   cam_y: -0.5
+    #   cam_height: 1.4
+    #   cam_pitch_deg: 10.0
+    #   cam_yaw_deg: -60.0
+
+    lidar_topic: /lidar/points     # remappable launch arg; there's one lidar
+    lidar_z_min: -0.3
+    lidar_z_max: 3.0
+
+    # segmentation_method: hsv | twinlitenet
+    # hsv has zero external deps and never fails to load -- the universal
+    # fallback. twinlitenet degrades to hsv automatically on any load
+    # failure (missing repo/weights/torch) -- see segmentation.py.
+    segmentation_method: hsv
+    segmentation_lower_hsv: [0, 0, 60]
+    segmentation_upper_hsv: [180, 60, 200]
+    segmentation_min_blob_area: 500
+    # twinlitenet_weights_path: /path/to/nano.pth
+    # twinlitenet_input_size: 640
+
+    # obstacle_method: classical | yolo | both
+    obstacle_method: classical
+    # yolo_weights: yolov8n.pt        # or a TensorRT .engine on the Jetson
+    yolo_conf: 0.35
+    yolo_footprint_frac: 0.25
+
+    # Grid geometry (GridSpec) -- robot-centric, REP-103 (+x fwd, +y left)
+    grid_x_min: -4.0
+    grid_x_max: 16.0
+    grid_y_min: -10.0
+    grid_y_max: 10.0
+    grid_resolution: 0.1
+
+    # Cost shaping (occupancy.build_cost_array)
+    offroad_cost: 65
+    road_edge_radius: 1.5
+    road_edge_scaling: 2.0
+    unknown_infill: true
+    infill_falloff_m: 2.0
+
+    # Per-class obstacle inflation (occupancy.DEFAULT_OBSTACLE_CLASSES)
+    obstacle_class_person_radius: 2.5
+    obstacle_class_person_scaling: 1.5
+    obstacle_class_vehicle_radius: 1.0
+    obstacle_class_vehicle_scaling: 5.0
+    obstacle_class_cone_radius: 0.6
+    obstacle_class_cone_scaling: 5.0
+
+    # Temporal confidence filter (temporal.TemporalObstacleFilter)
+    temporal_enabled: true
+    temporal_hit: 0.4
+    temporal_miss: 0.2
+    temporal_threshold: 0.5
+
+    publish_rate_hz: 10.0
