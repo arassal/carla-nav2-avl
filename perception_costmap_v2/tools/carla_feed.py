@@ -154,6 +154,11 @@ def main():
         state["rgb"] = bgr
         msg = Image()
         msg.header.frame_id = "camera_front"
+        # Must be set: costmap_node's CameraSource.is_fresh() compares this
+        # against now(), so a default 0/0 stamp makes every camera frame read
+        # as epoch-old and the fusion tick silently drops all camera input
+        # (road stays unknown, only lidar obstacles survive).
+        msg.header.stamp = node.get_clock().now().to_msg()
         msg.height, msg.width = image.height, image.width
         msg.encoding = "bgr8"
         msg.step = image.width * 3
