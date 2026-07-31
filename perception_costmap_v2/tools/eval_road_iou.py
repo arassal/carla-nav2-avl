@@ -34,7 +34,7 @@ import cv2
 from perception_costmap.carla_convert import semantic_to_road_mask, mask_iou
 from perception_costmap.segmentation import create_segmenter
 from perception_costmap.occupancy import GridSpec
-from perception_costmap.bev import homography_from_camera, warp_to_bev
+from perception_costmap.bev import homography_from_extrinsics, warp_to_bev
 
 
 def find_pairs(dump_dir):
@@ -55,9 +55,16 @@ def main():
     ap.add_argument("--road-tags", nargs="+", type=int, default=[1, 24],
                     help="CARLA semantic tag ids counted as road; PRINT AND VERIFY against "
                          "carla_feed's first-frame diagnostic before trusting the default")
-    ap.add_argument("--cam-height", type=float, default=1.6)
-    ap.add_argument("--pitch", type=float, default=12.0)
-    ap.add_argument("--fx", type=float, default=500.0)
+    # Defaults match tools/carla_feed.py's camera (640x480, FOV 90, no
+    # Rotation, mounted at x=1.5). fx=500/pitch=12 were placeholders and
+    # scored the BEV column against a homography no frame was ever taken
+    # with -- see DEPLOY.md section 3, and pass your own values for any
+    # other camera.
+    ap.add_argument("--cam-height", type=float, default=1.9,
+                    help="camera height ABOVE THE ROAD, not the mount offset")
+    ap.add_argument("--cam-x", type=float, default=1.5)
+    ap.add_argument("--pitch", type=float, default=0.0)
+    ap.add_argument("--fx", type=float, default=320.0)
     ap.add_argument("--limit", type=int, default=0, help="0 = all pairs")
     args = ap.parse_args()
 
@@ -74,7 +81,8 @@ def main():
     h, w = sample_img.shape[:2]
     K = np.array([[args.fx, 0, w / 2], [0, args.fx, h / 2], [0, 0, 1]], dtype=np.float64)
     grid = GridSpec(x_min=0.0, x_max=20.0, y_min=-10.0, y_max=10.0, resolution=0.1)
-    H = homography_from_camera(K, args.cam_height, args.pitch, grid)
+    H = homography_from_extrinsics(K, (args.cam_x, 0.0, args.cam_height),
+                                   args.pitch, 0.0, grid)
 
     results = {m: {"image": [], "bev": []} for m in args.methods}
 

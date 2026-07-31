@@ -166,6 +166,35 @@ PYTHONPATH=. python3 tools/eval_road_iou.py --dump-dir /tmp/carla_eval_frames \
     --methods hsv --road-tags 1 24
 ```
 
+The geometry flags (`--fx --cam-height --cam-x --pitch`) default to
+`carla_feed.py`'s camera and feed the BEV column's homography. They used to
+default to the same `fx 500 / pitch 12` placeholders section 3 warns about,
+which scored BEV against a homography no frame was ever taken with; on the
+frames below that alone read 0.2653 instead of 0.7511. **If your frames came
+from a different camera, pass its real values** -- and re-read section 3 on
+`--cam-height` being measured from the road.
+
+Measured on 40 Town10HD_Opt frame pairs (2026-07-31):
+
+| method | IoU (image) | IoU (BEV) |
+|---|---|---|
+| hsv | 0.3430 | 0.7511 |
+
+The image-space number is low for a reason worth knowing before you trust
+`hsv` on a real camera: precision 0.567 / recall 0.430, and the false
+positives are almost entirely **above the horizon**. The grey sky and
+buildings of Town10HD fall inside the `(0,0,60)-(180,60,200)` HSV band and
+connect to the road through the horizon line, so `_largest_blob` returns one
+blob spanning both -- 41% of the top half is predicted road where ground
+truth is 0%. Restricting to below the horizon before blob selection lifts
+image IoU 0.343 -> 0.451.
+
+This does not corrupt the costmap today, which is why BEV scores so much
+higher: `bev_known_mask` only samples the ground footprint, so the sky
+detections are discarded before they reach a cell. It does mean the image
+IoU understates `hsv` and that anything which bypasses that mask (or any
+camera whose horizon isn't at `cy`) inherits the bug.
+
 Add `twinlitenet` to `--methods` once you have `nano.pth` weights
 (`segmentation_method: twinlitenet` in the config); it degrades to `hsv`
 automatically if the weights don't load, so it's always safe to try.
