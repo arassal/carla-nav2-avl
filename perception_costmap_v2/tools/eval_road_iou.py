@@ -60,8 +60,9 @@ def main():
     # scored the BEV column against a homography no frame was ever taken
     # with -- see DEPLOY.md section 3, and pass your own values for any
     # other camera.
-    ap.add_argument("--cam-height", type=float, default=1.9,
-                    help="camera height ABOVE THE ROAD, not the mount offset")
+    ap.add_argument("--cam-height", type=float, default=1.6,
+                    help="camera height above the road (CAMERA_MOUNT_Z for a "
+                         "settled CARLA vehicle -- see DEPLOY.md section 3)")
     ap.add_argument("--cam-x", type=float, default=1.5)
     ap.add_argument("--pitch", type=float, default=0.0)
     ap.add_argument("--fx", type=float, default=320.0)

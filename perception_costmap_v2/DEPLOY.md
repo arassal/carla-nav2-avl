@@ -143,31 +143,50 @@ placeholders, NOT the values for `carla_feed.py`'s camera. Derive them:
   `fx = fy = (W/2)/tan(FOV/2) = 320`, `cx = 320`, `cy = 240`, `pitch = 0`.
 - `--cam-x 1.5` -- the camera's forward mount offset, or every distance is
   off by 1.5 m.
-- `--cam-height` is the camera's height **above the road surface**, which is
-  NOT the 1.6 in `CAMERA_MOUNT_Z`. See below.
+- `--cam-height` is the camera's height **above the road surface**. For a
+  settled CARLA vehicle that is just `CAMERA_MOUNT_Z` -- but only once it
+  has settled. See below.
 
 ```bash
 PYTHONPATH=. python3 tools/ipm_overlay.py --image /tmp/carla_eval_frames/rgb_000010.png \
-    --fx 320 --fy 320 --cx 320 --cy 240 --cam-height 1.939 --cam-x 1.5 --pitch 0 \
+    --fx 320 --fy 320 --cx 320 --cy 240 --cam-height 1.6 --cam-x 1.5 --pitch 0 \
     --out /tmp/overlay.png
 ```
 
-### cam-height is measured from the road, not from the vehicle origin
+Verify it objectively rather than by eye:
 
-A CARLA vehicle's actor origin floats above the road. Sensors mount
-relative to that origin, so a camera at `Location(z=1.6)` sits ~1.9 m above
-the road, not 1.6 m. Feeding the mount offset instead of the true height is
-a silent systematic error:
+```bash
+PYTHONPATH=. python3 tools/carla_calib_check.py
+```
 
-| `--cam-height` | max reprojection error vs CARLA ground truth |
+Verified 2026-07-31 on Town10HD_Opt: with `--cam-height 1.6`, the homography
+reproduces CARLA's own projection of 9 ground probes (5-16 m, +/-3 m
+lateral) to **0.32 px**, including the left-handed-to-REP-103 lateral sign.
+`homography_from_extrinsics` is correct.
+
+### Let the vehicle settle before measuring anything
+
+CARLA spawn points sit **0.6 m above the road** so a vehicle can never spawn
+embedded in it. The car then falls and settles. Sampling the transform
+mid-fall reads a transient as if it were a permanent mount offset, and the
+transient is big enough to look plausible. Measured with a 0.05 s fixed
+timestep:
+
+| ticks after spawn (sim time) | actor origin above road |
 |---|---|
-| 1.600 (mount offset) | 43.38 px |
-| 1.939 (true height, that run) | 0.00 px |
+| 0 | +0.000 m (spawn height, still 0.6 m up in world z) |
+| 5 (0.25 s) | +0.282 m |
+| 10 (0.50 s) | -0.017 m |
+| 20+ (1.0 s+) | **-0.007 m** (steady state) |
 
-**Do not copy 1.939.** The origin offset depends on the vehicle blueprint
-and on how far the suspension has settled -- across runs of the same
-blueprint on Town10HD_Opt it measured 0.275, 0.307, 0.338, 0.339 m, i.e.
-cam-height 1.875 to 1.939. Measure it in the same session you calibrate in:
+So a settled `vehicle.*` origin is level with the road to within 7 mm, and
+`Location(z=1.6)` really is 1.6 m up. An earlier revision of this document
+claimed the origin floats ~0.3 m and that `--cam-height` had to be ~1.9;
+that number was sampled at roughly the 0.25 s row above and is wrong.
+`tools/carla_calib_check.py` now ticks synchronously for 60 steps before
+measuring, which is why its residual is 0.32 px at 1.600.
+
+If you still want to measure it yourself, do it after settling:
 
 ```python
 tf = ego.get_transform(); ct = cam.get_transform()
@@ -175,14 +194,13 @@ road_z = world.get_map().get_waypoint(tf.location, project_to_road=True).transfo
 print(ct.location.z - road_z)      # <-- this is --cam-height
 ```
 
-The same offset applies to `LIDAR_MOUNT_Z = 1.8`, which feeds
-`carla_lidar_to_rep103(sensor_z=...)`.
-
-Verified 2026-07-30 on Town10HD_Opt: with the true height, the homography
-reproduces CARLA's own projection of 9 ground probes (5-16 m, +/-3 m
-lateral) to 0.00 px on both axes, including the left-handed-to-REP-103
-lateral sign. The homography implementation itself is correct; only the
-height parameter was ever in question.
+The same reasoning applies to `LIDAR_MOUNT_Z = 1.8` feeding
+`carla_lidar_to_rep103(sensor_z=...)`: measured on a settled vehicle the
+true lidar height is 1.793 m, so the shipped 1.8 is right and
+`remove_ground_plane`'s `z_min = -0.3` band keeps its full margin. (Had the
+0.3 m offset been real it would have been serious -- ground returns would
+land at exactly z = -0.3, right on the rejection boundary, and half the road
+surface would have entered the costmap as lethal obstacles.)
 
 Open `/tmp/overlay.png` and confirm the drawn 1m grid lines land where a
 tape measure would put them. Do this for every camera before trusting
@@ -203,15 +221,19 @@ The geometry flags (`--fx --cam-height --cam-x --pitch`) default to
 `carla_feed.py`'s camera and feed the BEV column's homography. They used to
 default to the same `fx 500 / pitch 12` placeholders section 3 warns about,
 which scored BEV against a homography no frame was ever taken with; on the
-frames below that alone read 0.2653 instead of 0.7511. **If your frames came
+frames below that alone read 0.2653 instead of 0.7923. **If your frames came
 from a different camera, pass its real values** -- and re-read section 3 on
-`--cam-height` being measured from the road.
+letting the vehicle settle before trusting a measured `--cam-height`.
 
 Measured on 40 Town10HD_Opt frame pairs (2026-07-31):
 
 | method | IoU (image) | IoU (BEV) |
 |---|---|---|
-| hsv | 0.3430 | 0.7511 |
+| hsv | 0.3430 | 0.7923 |
+
+(The BEV column is itself a calibration check: the same frames score 0.7511
+at `--cam-height 1.9` and 0.2653 at the old placeholders, so a wrong
+homography shows up here as a worse segmenter score.)
 
 The image-space number is low for a reason worth knowing before you trust
 `hsv` on a real camera: precision 0.567 / recall 0.430, and the false

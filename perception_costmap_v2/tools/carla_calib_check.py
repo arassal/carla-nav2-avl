@@ -28,11 +28,19 @@ c=carla.Client('127.0.0.1',2000); c.set_timeout(30.0)
 w=c.get_world(); bl=w.get_blueprint_library()
 sp=w.get_map().get_spawn_points()[0]
 ego=w.spawn_actor(bl.filter('vehicle.*')[0], sp); actors=[ego]
+orig=w.get_settings()
 try:
+    # CARLA spawn points sit 0.6 m ABOVE the road so vehicles never spawn
+    # inside it; the car then falls and settles. Measuring the camera height
+    # before it has settled reads a transient offset (~0.28 m at 0.25 s) as
+    # if it were a permanent mount error. Tick synchronously so "settled"
+    # means settled in SIM time, not in however much wall time we waited.
+    s=w.get_settings(); s.synchronous_mode=True; s.fixed_delta_seconds=0.05
+    w.apply_settings(s)
     bp=bl.find('sensor.camera.rgb')
     for k,v in (('image_size_x','640'),('image_size_y','480'),('fov','90')): bp.set_attribute(k,v)
     cam=w.spawn_actor(bp, carla.Transform(carla.Location(x=1.5,z=1.6)), attach_to=ego); actors.append(cam)
-    for _ in range(60): w.wait_for_tick()
+    for _ in range(60): w.tick()
     K=np.array([[320.,0,320],[0,320.,240],[0,0,1]])
     g=GridSpec(x_min=-4,x_max=16,y_min=-10,y_max=10,resolution=0.1)
     A=np.array([[1/g.resolution,0,-g.x_min/g.resolution],[0,1/g.resolution,-g.y_min/g.resolution],[0,0,1.]])
@@ -62,6 +70,7 @@ try:
                     (hbest,'BEST FIT')):
         print('  cam-height %.3f  -> %6.2f px   %s' % (h, maxerr(h), label))
 finally:
+    w.apply_settings(orig)
     for a in reversed(actors):
         try: a.destroy()
         except Exception: pass
