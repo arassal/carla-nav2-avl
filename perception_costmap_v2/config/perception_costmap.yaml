@@ -77,6 +77,11 @@ perception_costmap_node:
     lidar_z_min: 0.15
     lidar_z_max: 3.0
 
+    # Ground-filtered lidar returns, republished for Nav2's ObstacleLayer so
+    # it can raytrace-clear (an OccupancyGrid cannot express clearing).
+    # Consumed by config/nav2_costmap_params.yaml; keep the two in sync.
+    obstacle_points_topic: /perception/obstacle_points
+
     # segmentation_method: hsv | twinlitenet
     # hsv has zero external deps and never fails to load -- the universal
     # fallback. twinlitenet degrades to hsv automatically on any load

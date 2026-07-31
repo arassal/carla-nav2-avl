@@ -26,7 +26,8 @@ from .obstacles import (points_to_grid_mask, remove_ground_plane,
                         YoloObstacleDetector, detect_obstacles_classical,
                         camera_obstacle_mask_to_grid)
 from .temporal import TemporalObstacleFilter
-from .util import stamp_to_sec, is_fresh, image_msg_to_bgr, pointcloud2_to_xyz
+from .util import (stamp_to_sec, is_fresh, image_msg_to_bgr, pointcloud2_to_xyz,
+                   xyz_to_pointcloud2_buffer, XYZ_POINT_STEP)
 
 
 class CameraSource:
@@ -72,6 +73,7 @@ class CostmapNode:
                 temporal_enabled=True, temporal_kw=None,
                 offroad_cost=None, road_edge_radius=1.5,
                 unknown_infill=True, lidar_topic="/lidar/points",
+                obstacle_points_topic="/perception/obstacle_points",
                 publish_rate_hz=10.0):
         self.grid = grid
         self.cameras = cameras  # name -> CameraSource
@@ -85,14 +87,17 @@ class CostmapNode:
         self.road_edge_radius = road_edge_radius
         self.unknown_infill = unknown_infill
         self.lidar_topic = lidar_topic
+        self.obstacle_points_topic = obstacle_points_topic
         self.publish_rate_hz = publish_rate_hz
         self._last_lidar_points = np.zeros((0, 3))
+        self._last_lidar_raw_points = np.zeros((0, 3))
         self._last_lidar_stamp_sec = None
         self._lidar_max_age = 0.5
         self._node = None
         self._subs = []
 
     def on_lidar(self, points_xyz: np.ndarray, stamp_sec: float):
+        self._last_lidar_raw_points = points_xyz
         self._last_lidar_points = remove_ground_plane(points_xyz, self.lidar_z_min, self.lidar_z_max)
         self._last_lidar_stamp_sec = stamp_sec
 
@@ -193,6 +198,12 @@ class CostmapNode:
         sensor_qos.durability = DurabilityPolicy.VOLATILE
 
         self._costmap_pub = node.create_publisher(OccupancyGrid, "/perception/costmap", 1)
+        # Nav2's ObstacleLayer wants the raw obstacle returns, not the grid:
+        # it does its own marking AND raytrace clearing along each ray, which
+        # an OccupancyGrid cannot express. Sensor-data QoS to match what
+        # nav2_costmap_2d subscribes with.
+        self._obstacle_pub = node.create_publisher(
+            PointCloud2, self.obstacle_points_topic, sensor_qos)
         self._node = node
 
         for cam in self.cameras.values():
@@ -245,6 +256,58 @@ class CostmapNode:
     def _on_timer(self):
         self.publish(self._now_sec())
 
+    def _build_obstacle_cloud(self, points_xyz, stamp):
+        from sensor_msgs.msg import PointCloud2, PointField
+        msg = PointCloud2()
+        msg.header.frame_id = self.grid.frame_id
+        if stamp is not None:
+            msg.header.stamp = stamp
+        msg.height = 1
+        msg.width = int(points_xyz.shape[0])
+        msg.fields = [
+            PointField(name="x", offset=0, datatype=PointField.FLOAT32, count=1),
+            PointField(name="y", offset=4, datatype=PointField.FLOAT32, count=1),
+            PointField(name="z", offset=8, datatype=PointField.FLOAT32, count=1),
+        ]
+        msg.is_bigendian = False
+        msg.point_step = XYZ_POINT_STEP
+        msg.row_step = msg.point_step * msg.width
+        msg.is_dense = True
+        msg.data = xyz_to_pointcloud2_buffer(points_xyz)
+        return msg
+
+    def publish_obstacle_points(self, now_sec: float, stamp=None):
+        """Publish the lidar sweep in the grid frame for Nav2's ObstacleLayer.
+
+        This carries the FULL sweep, ground returns included, even though the
+        topic is named for obstacles. Nav2's ObstacleLayer clears a cell by
+        raytracing from the sensor origin to each returned point, so the
+        ground returns are exactly the rays that sweep the road clear. Send
+        it only the above-ground points and there are no rays over open road
+        at all: measured against CARLA, a pedestrian's cells went 0 -> 5 on
+        arrival and only 5 -> 4 in the 8 s after it was removed. With the
+        ground returns present the same cells clear.
+
+        Marking is still restricted to real obstacles -- ObstacleLayer's own
+        `min_obstacle_height` does it, and nav2_costmap_params.yaml sets it
+        to match this node's `lidar_z_min`. Keep those two in sync; that
+        pairing is what makes it safe to publish ground here.
+
+        Published on the same tick as the costmap rather than straight from
+        the lidar callback, so the two outputs always describe the same
+        instant and share one staleness rule. When the lidar is stale this
+        deliberately publishes an EMPTY cloud instead of nothing: an empty
+        cloud is a valid observation that marks nothing, whereas silence
+        would leave Nav2 holding its last marks with no way to know they are
+        no longer supported -- the same latching this package's own _tick
+        short-circuit exists to avoid.
+        """
+        fresh = (self._last_lidar_stamp_sec is not None and
+                 is_fresh(self._last_lidar_stamp_sec, now_sec, self._lidar_max_age))
+        points = self._last_lidar_raw_points if fresh else np.zeros((0, 3))
+        self._obstacle_pub.publish(self._build_obstacle_cloud(points, stamp))
+        return points.shape[0]
+
     def publish(self, now_sec: float):
         cost = self._tick(now_sec)
         # Stamp it. Consumers (Nav2's StaticLayer, rviz, any TF lookup into
@@ -253,6 +316,7 @@ class CostmapNode:
         stamp = self._node.get_clock().now().to_msg() if self._node else None
         msg = to_occupancy_grid_msg(cost, self.grid, stamp=stamp)
         self._costmap_pub.publish(msg)
+        self.publish_obstacle_points(now_sec, stamp)
         return cost
 
 
@@ -328,6 +392,7 @@ def build_from_params(node):
         road_edge_radius=p("road_edge_radius", 1.5),
         unknown_infill=p("unknown_infill", True),
         lidar_topic=p("lidar_topic", "/lidar/points"),
+        obstacle_points_topic=p("obstacle_points_topic", "/perception/obstacle_points"),
         publish_rate_hz=p("publish_rate_hz", 10.0),
     )
 

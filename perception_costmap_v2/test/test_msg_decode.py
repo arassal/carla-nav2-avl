@@ -8,7 +8,8 @@ instead of behind cv_bridge.
 import numpy as np
 import pytest
 
-from perception_costmap.util import image_msg_to_bgr, pointcloud2_to_xyz
+from perception_costmap.util import (image_msg_to_bgr, pointcloud2_to_xyz,
+                                     xyz_to_pointcloud2_buffer, XYZ_POINT_STEP)
 
 
 class FakeImage:
@@ -160,6 +161,34 @@ def test_integer_xyz_rejected():
                     12, b"\x00" * 12, width=1)
     with pytest.raises(ValueError, match="non-float datatype"):
         pointcloud2_to_xyz(msg)
+
+
+def _encode(points):
+    """Wrap the published buffer in the same message shape costmap_node's
+    _build_obstacle_cloud declares, so the round-trip below exercises the
+    field layout we actually advertise -- not just the raw bytes."""
+    return FakeCloud([FakeField("x", 0), FakeField("y", 4), FakeField("z", 8)],
+                     XYZ_POINT_STEP, xyz_to_pointcloud2_buffer(points),
+                     width=len(points))
+
+
+def test_obstacle_cloud_round_trips_through_the_decoder():
+    # /perception/obstacle_points is produced by one of these functions and
+    # consumed (by Nav2, by anything replaying a bag) as the other's input.
+    # Asymmetric, sign-varied values so an axis swap or a sign flip fails.
+    pts = np.array([[1.0, -2.0, 0.5],
+                    [12.5, 3.25, 1.75],
+                    [-0.5, 0.0, 2.0]], dtype=np.float64)
+    out = pointcloud2_to_xyz(_encode(pts))
+    assert out.shape == (3, 3)
+    assert np.allclose(out, pts)
+
+
+def test_empty_obstacle_cloud_round_trips():
+    # the stale-lidar case publishes an empty cloud on purpose; it must
+    # decode as "no obstacles", not raise
+    out = pointcloud2_to_xyz(_encode(np.zeros((0, 3))))
+    assert out.shape == (0, 3)
 
 
 def test_bigendian_rejected():

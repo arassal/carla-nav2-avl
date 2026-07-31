@@ -124,3 +124,20 @@ def pointcloud2_to_xyz(msg):
                              "past point_step %d" % (name, off, width, point_step))
         out[:, i] = raw[:, off:off + width].copy().view(dt).reshape(n)
     return out
+
+
+#: Byte layout of the clouds this package publishes: packed float32 x, y, z.
+XYZ_POINT_STEP = 12
+
+
+def xyz_to_pointcloud2_buffer(points_xyz):
+    """
+    (N, 3) array -> the `data` bytes of a packed float32 xyz PointCloud2.
+
+    The message object itself is assembled in costmap_node (it needs the ROS
+    types); only the buffer is here, so `test_msg_decode` can round-trip it
+    through `pointcloud2_to_xyz` and catch an encoder/decoder disagreement
+    without a ROS graph.
+    """
+    pts = np.asarray(points_xyz, dtype=np.float32).reshape(-1, 3)
+    return np.ascontiguousarray(pts).tobytes()

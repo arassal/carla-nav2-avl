@@ -388,12 +388,46 @@ Three things that cost time here:
 - **TF is required** -- nothing in this package or `carla_feed.py` publishes
   `map -> odom -> base_link`. On the real car that comes from odometry; in
   sim the static publishers above are enough to run the check.
-- **`obstacle_layer` had no input.** `config/nav2_costmap_params.yaml` points
-  it at `/perception/obstacle_points`, which nothing publishes -- the node
-  only publishes the OccupancyGrid. The mirror above works entirely through
-  `static_layer`. Publishing the filtered obstacle cloud is still to do; the
-  practical effect of its absence is that Nav2 gets no raytrace *clearing* of
-  its own, and relies on this package's temporal filter for that.
+- **`obstacle_layer` needs `/perception/obstacle_points`**, which the node
+  now publishes (see below). Before that it had no input at all and the
+  mirror worked entirely through `static_layer`, with no raytrace clearing.
+
+### /perception/obstacle_points and raytrace clearing
+
+The node publishes the lidar sweep in `base_link` on
+`/perception/obstacle_points` at the costmap rate, so Nav2's `ObstacleLayer`
+can do its own marking and, more importantly, its own raytrace clearing --
+something an OccupancyGrid cannot express.
+
+Two non-obvious things, both found by measuring rather than reading:
+
+**The cloud carries ground returns, despite the topic name.** ObstacleLayer
+clears a cell by raytracing from the sensor origin to each returned point.
+Ground returns are the rays that sweep open road. Publish only the
+above-ground points and there are no rays over open road at all.
+
+**One observation source cannot both mark and clear here.** Nav2 applies
+`min_obstacle_height` / `max_obstacle_height` in `ObservationBuffer`, which
+feeds marking *and* clearing from the same filtered cloud. Set
+`min_obstacle_height` at the obstacle threshold and the ground returns are
+discarded before raytracing ever sees them. So
+`config/nav2_costmap_params.yaml` declares two sources on the one topic:
+`lidar_marking` (marking only, `min_obstacle_height: 0.15`) and
+`lidar_clearing` (clearing only, `min_obstacle_height: -1.0`).
+
+Measured on `/local_costmap/obstacle_layer` alone -- this is Nav2's own
+layer, independent of this package's temporal filter:
+
+| config | road marked? | pedestrian arrives | pedestrian removed |
+|---|---|---|---|
+| single source, ground-filtered cloud | no | 0 -> 5 | **5 -> 4 after 8 s** |
+| single source, full cloud | no | 0 -> 5 | **5 -> 6 after 6 s** |
+| two sources, full cloud | no | 0 -> 5 | **5 -> 0 within 1 s** |
+
+When the lidar goes stale the node publishes an **empty** cloud rather than
+nothing: an empty cloud is a valid observation that marks nothing, whereas
+silence leaves Nav2 holding marks it has no way to invalidate -- the same
+latching failure as the costmap's blind tick.
 
 ## 7. Jetson-specific notes (only if targeting real hardware)
 
