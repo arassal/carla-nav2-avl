@@ -18,7 +18,8 @@ change at all.
 
 import numpy as np
 
-from .occupancy import GridSpec, build_cost_array, to_occupancy_grid_msg, DEFAULT_OBSTACLE_CLASSES
+from .occupancy import (GridSpec, build_cost_array, to_occupancy_grid_msg,
+                        UNKNOWN, DEFAULT_OBSTACLE_CLASSES)
 from .bev import warp_to_bev, bev_known_mask
 from .segmentation import create_segmenter
 from .obstacles import (points_to_grid_mask, remove_ground_plane,
@@ -133,6 +134,21 @@ class CostmapNode:
 
         lidar_fresh = (self._last_lidar_stamp_sec is not None and
                       is_fresh(self._last_lidar_stamp_sec, now_sec, self._lidar_max_age))
+
+        if not any_camera_fresh and not lidar_fresh:
+            # Blind tick: publish "I know nothing" rather than the last thing
+            # we believed. Without this the TemporalObstacleFilter latches --
+            # it only decays confidence on cells it OBSERVED this tick, and a
+            # blind tick observes none, so the final obstacle set is republished
+            # unchanged forever (measured: 6.69% of cells still LETHAL, bit
+            # identical, 40s after the sensors stopped). Nav2 handles an
+            # unknown costmap; it cannot detect a confidently wrong one.
+            #
+            # Temporal confidence is deliberately NOT reset. Recovery from a
+            # brief dropout then keeps its history, and obstacles that really
+            # did disappear decay normally once cells are observed again.
+            return np.full(shape, UNKNOWN, dtype=np.int8)
+
         lidar_obstacle = np.zeros(shape, dtype=bool)
         if lidar_fresh:
             lidar_obstacle = points_to_grid_mask(self._last_lidar_points, self.grid)

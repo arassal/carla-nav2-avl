@@ -292,21 +292,31 @@ Two things to know before running it:
   `known_mask` is precomputed from it. Frames of any other size are logged
   and dropped rather than silently misprojected.
 
-### Known issue: the costmap freezes when every sensor dies
+### Going blind publishes UNKNOWN, not the last thing we believed
 
-Measured here: kill the feed and the node keeps publishing at 10 Hz with
+If no camera and no lidar is fresh, `_tick` short-circuits and publishes an
+all-UNKNOWN grid. Nav2 handles an unknown costmap; it cannot detect a
+confidently wrong one.
+
+This matters because `TemporalObstacleFilter` only decays confidence on
+cells it *observed* this tick, and a blind tick observes none. Before the
+short-circuit, killing the feed left the node publishing at 10 Hz with
 **6.69% of cells still lethal, bit-identical, 40+ seconds later**. The
-staleness guards work -- road drops to 0% free immediately -- but
-`TemporalObstacleFilter` only decays confidence on cells it *observed* this
-tick, and with nothing fresh there are no observed cells, so the last
-obstacle set is latched forever.
+staleness guards were working (road dropped to 0% free immediately); the
+latch was downstream of them. It survived the offline suite because every
+"no fresh sensors" test there starts from a virgin node with nothing latched
+-- `test_going_blind_clears_previously_latched_obstacles` establishes a
+confident obstacle first, which is what makes it a real regression test.
 
-The failure is in the conservative direction (phantom obstacles, not phantom
-free space), which is why it survived the offline suite: every test feeds it
-at least one fresh sensor. It still means the costmap asserts knowledge it
-does not have. Fixing it is a design decision -- decay everywhere when
-nothing is fresh, or publish an all-unknown grid and let Nav2's own
-staleness handling take over -- so it is deliberately left as-is here.
+Temporal confidence is deliberately *not* reset while blind, so recovery
+from a brief dropout keeps its history rather than restarting from zero.
+Obstacles that genuinely disappeared decay normally once cells are observed
+again.
+
+Verified live (2026-07-31): feed running 3.9% unknown / 4.5% free / 6.1%
+lethal -> feed killed, 100.00% unknown and 0.00% lethal held across 250
+messages / 25 s at a steady 10 Hz -> feed restarted, 3.9% unknown / 9.5%
+free / 6.6% lethal.
 
 ## 6. Nav2 acceptance checklist
 

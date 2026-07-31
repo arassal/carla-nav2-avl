@@ -63,6 +63,54 @@ def test_tick_lidar_only_publishes_obstacles_without_marking_road():
     assert not (cost == FREE).any()
 
 
+def test_going_blind_clears_previously_latched_obstacles():
+    """
+    Every other 'no fresh sensors' test above starts from a virgin node, so
+    the temporal filter has nothing latched and they pass even when a blind
+    tick republishes stale belief. This one establishes a confident obstacle
+    FIRST, then goes blind -- which is what actually happened against CARLA
+    (6.69% of cells stayed LETHAL, bit identical, 40s after the feed died).
+    """
+    grid = GridSpec(x_min=0, x_max=10, y_min=-5, y_max=5, resolution=0.5)
+    cam = _make_forward_camera(grid)
+    node = CostmapNode(grid, {"front": cam}, temporal_enabled=True,
+                       temporal_kw=dict(hit=0.4, miss=0.2, threshold=0.5))
+    pts = np.array([[3.0, 0.0, 0.5]])
+    col, row = grid.world_to_cell(3.0, 0.0)
+
+    node.on_lidar(pts, stamp_sec=100.0)
+    node._tick(now_sec=100.1)
+    node.on_lidar(pts, stamp_sec=100.2)
+    assert node._tick(now_sec=100.3)[row, col] == LETHAL   # latched
+
+    # now every sensor stops: max_age is 0.5s, so 10s later nothing is fresh
+    blind = node._tick(now_sec=110.0)
+    assert (blind == UNKNOWN).all()
+    # and it must stay unknown, not drift back
+    assert (node._tick(now_sec=120.0) == UNKNOWN).all()
+
+
+def test_recovery_after_blindness_keeps_temporal_history():
+    """A dropout must not cost us the confidence history -- one fresh lidar
+    frame after recovery should re-confirm, not restart from zero."""
+    grid = GridSpec(x_min=0, x_max=10, y_min=-5, y_max=5, resolution=0.5)
+    cam = _make_forward_camera(grid)
+    node = CostmapNode(grid, {"front": cam}, temporal_enabled=True,
+                       temporal_kw=dict(hit=0.4, miss=0.2, threshold=0.5))
+    pts = np.array([[3.0, 0.0, 0.5]])
+    col, row = grid.world_to_cell(3.0, 0.0)
+
+    node.on_lidar(pts, stamp_sec=100.0)
+    node._tick(now_sec=100.1)
+    node.on_lidar(pts, stamp_sec=100.2)
+    node._tick(now_sec=100.3)
+
+    assert (node._tick(now_sec=110.0) == UNKNOWN).all()    # blind
+
+    node.on_lidar(pts, stamp_sec=110.5)
+    assert node._tick(now_sec=110.6)[row, col] == LETHAL
+
+
 def test_tick_temporal_filter_suppresses_single_frame_obstacle():
     grid = GridSpec(x_min=0, x_max=10, y_min=-5, y_max=5, resolution=0.5)
     cam = _make_forward_camera(grid)
