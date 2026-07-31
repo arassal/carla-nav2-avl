@@ -68,7 +68,7 @@ class CostmapNode:
     def __init__(self, grid: GridSpec, cameras: dict,
                 segmentation_method="hsv", segmentation_kw=None,
                 obstacle_method="classical", yolo_kw=None,
-                lidar_z_min=-0.3, lidar_z_max=3.0,
+                lidar_z_min=0.15, lidar_z_max=3.0,
                 temporal_enabled=True, temporal_kw=None,
                 offroad_cost=None, road_edge_radius=1.5,
                 unknown_infill=True, lidar_topic="/lidar/points",
@@ -247,7 +247,11 @@ class CostmapNode:
 
     def publish(self, now_sec: float):
         cost = self._tick(now_sec)
-        msg = to_occupancy_grid_msg(cost, self.grid)
+        # Stamp it. Consumers (Nav2's StaticLayer, rviz, any TF lookup into
+        # base_link) treat a default 0/0 header.stamp as epoch-old -- the same
+        # failure the camera feed had on the input side, just one hop later.
+        stamp = self._node.get_clock().now().to_msg() if self._node else None
+        msg = to_occupancy_grid_msg(cost, self.grid, stamp=stamp)
         self._costmap_pub.publish(msg)
         return cost
 
@@ -314,7 +318,7 @@ def build_from_params(node):
         segmentation_method=p("segmentation_method", "hsv"),
         segmentation_kw=seg_kw,
         obstacle_method=p("obstacle_method", "classical"),
-        lidar_z_min=p("lidar_z_min", -0.3),
+        lidar_z_min=p("lidar_z_min", 0.15),
         lidar_z_max=p("lidar_z_max", 3.0),
         temporal_enabled=p("temporal_enabled", True),
         temporal_kw=dict(hit=p("temporal_hit", 0.4),

@@ -320,13 +320,80 @@ free / 6.6% lethal.
 
 ## 6. Nav2 acceptance checklist
 
-- `ros2 topic hz /perception/costmap` >= 8 Hz
-- RViz: road reads free, a pedestrian standing in view goes lethal within
-  ~300ms and clears within ~500ms after stepping away (temporal filter
-  working -- see `test/test_costmap_node.py` and the synthetic demo for
-  the same behavior proven offline)
-- Nav2's local costmap (`config/nav2_costmap_params.yaml`) visibly mirrors
-  `/perception/costmap`
+Run it instead of eyeballing it -- 300 ms and 800 ms look identical in RViz:
+
+```bash
+# with CarlaUE4.sh + tools/carla_feed.py + costmap_node already running
+PYTHONPATH=. python3 tools/carla_acceptance.py
+```
+
+It brakes the ego (so the walker can't leave frame mid-measurement), spawns
+a pedestrian 6 m ahead, and timestamps the costmap transitions. Measured
+2026-07-31 on Town10HD_Opt:
+
+| criterion | target | measured |
+|---|---|---|
+| `/perception/costmap` rate | >= 8 Hz | **10.00 Hz** |
+| lethal cells on clear road ahead | 0 | **0** |
+| pedestrian appears -> lethal | ~300 ms | **168 ms** (`68ms:0 168ms:4`) |
+| pedestrian removed -> clear | ~500 ms | **299 ms** (`7ms:6 99ms:5 200ms:4 299ms:0`) |
+
+### The road ahead was LETHAL until `lidar_z_min` was fixed
+
+The first run of the above reported **44-63 lethal cells within 1 m of every
+probe point on the road ahead**, and no clear region existed anywhere to
+measure against. Cause: `remove_ground_plane`'s shipped `z_min = -0.3`.
+
+Lidar points reach that filter in base_link with the mount height already
+added, so road returns sit at z ~= 0 -- a *negative* z_min keeps every one of
+them, and `build_cost_array` has obstacles override road, so the entire
+drivable surface published as LETHAL. Measured against CARLA: of the lidar
+points in the 2-16 m box ahead, **100% were road surface within +/-0.15 m of
+z = 0, and all of them survived the filter**. At `z_min = 0.15`, zero
+survive there while a pedestrian (metres tall) is untouched.
+
+It looked plausible in RViz -- a busy town scene *should* have obstacles --
+and the offline test for this function used z = -1.0 as its "ground" point,
+a value no real lidar produces. `test_default_z_min_rejects_actual_road_returns`
+now pins the default against realistic road noise instead.
+
+The default is now `0.15` in `obstacles.py`, `costmap_node.py` and
+`config/perception_costmap.yaml`. Curbs (~0.12 m) are below it and will not
+be seen by lidar; they come from the camera road mask.
+
+### Nav2 mirror check
+
+```bash
+ros2 run tf2_ros static_transform_publisher 0 0 0 0 0 0 map odom &
+ros2 run tf2_ros static_transform_publisher 0 0 0 0 0 0 odom base_link &
+ros2 run nav2_costmap_2d nav2_costmap_2d \
+    --ros-args -r __ns:=/local_costmap -r __node:=local_costmap \
+    --params-file config/nav2_costmap_params.yaml \
+    -p always_send_full_costmap:=true
+ros2 lifecycle set /local_costmap/local_costmap configure
+ros2 lifecycle set /local_costmap/local_costmap activate
+```
+
+Verified: `StaticLayer: Resizing static layer to 200 X 200 at 0.100000 m/pix`
+on activation, and the same pedestrian test read 0 -> 5 -> 0 lethal cells at
+6 m in **both** `/perception/costmap` and `/local_costmap/costmap`, with 112
+additional cells at cost 99 around it from Nav2's own `inflation_layer`.
+
+Three things that cost time here:
+
+- **`always_send_full_costmap: true` is needed to compare them.** By default
+  Nav2 publishes one full map and then incremental
+  `/local_costmap/costmap_updates`, so `/local_costmap/costmap` looks dead
+  (`ros2 topic hz` times out) while the costmap is in fact updating fine.
+- **TF is required** -- nothing in this package or `carla_feed.py` publishes
+  `map -> odom -> base_link`. On the real car that comes from odometry; in
+  sim the static publishers above are enough to run the check.
+- **`obstacle_layer` had no input.** `config/nav2_costmap_params.yaml` points
+  it at `/perception/obstacle_points`, which nothing publishes -- the node
+  only publishes the OccupancyGrid. The mirror above works entirely through
+  `static_layer`. Publishing the filtered obstacle cloud is still to do; the
+  practical effect of its absence is that Nav2 gets no raytrace *clearing* of
+  its own, and relies on this package's temporal filter for that.
 
 ## 7. Jetson-specific notes (only if targeting real hardware)
 

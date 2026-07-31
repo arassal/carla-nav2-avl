@@ -37,11 +37,22 @@ def points_to_grid_mask(points_xyz: np.ndarray, grid: GridSpec) -> np.ndarray:
     return mask
 
 
-def remove_ground_plane(points_xyz: np.ndarray, z_min: float = -0.3,
+def remove_ground_plane(points_xyz: np.ndarray, z_min: float = 0.15,
                         z_max: float = 3.0) -> np.ndarray:
     """Keep only points in a z-band above the ground and below a sane
     overhead cutoff. Assumes roughly flat ground near the vehicle -- a
-    documented limitation, not a full plane fit."""
+    documented limitation, not a full plane fit.
+
+    z_min must be ABOVE the road, not below it. Points arrive in base_link
+    with z already offset by the sensor mount height, so road returns sit at
+    z ~= 0; a negative z_min keeps every one of them and the whole drivable
+    surface is then published LETHAL (obstacles override road in
+    build_cost_array). Measured against CARLA: at the shipped -0.3, 100% of
+    the lidar points in the 2-16 m box ahead were road surface and all of
+    them survived. 0.15 clears the road (0 survivors there) while sitting far
+    below anything that matters -- a pedestrian, cone or vehicle is metres
+    tall. The cost is that curbs (~0.12 m) are not seen by lidar; they come
+    from the camera road mask instead."""
     if points_xyz.size == 0:
         return points_xyz
     z = points_xyz[:, 2]

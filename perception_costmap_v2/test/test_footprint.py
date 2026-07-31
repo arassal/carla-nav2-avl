@@ -48,6 +48,24 @@ def test_remove_ground_plane_filters_by_z_band():
     assert out[0, 2] == 0.5
 
 
+def test_default_z_min_rejects_actual_road_returns():
+    """The band test above uses z=-1.0 as its "ground" point, which no real
+    lidar produces: points arrive with the mount height already added, so
+    road returns sit at z ~= 0. That gap let a negative default z_min ship,
+    which kept the entire road surface and published it LETHAL. Pin the
+    default against realistic road noise instead."""
+    road = np.column_stack((
+        np.linspace(2.0, 16.0, 50),
+        np.zeros(50),
+        np.random.RandomState(0).normal(0.0, 0.02, 50),   # +/- a few cm
+    ))
+    assert remove_ground_plane(road).shape[0] == 0
+
+    # ...while anything that matters is still kept: a pedestrian's torso
+    person = np.array([[6.0, 0.0, 0.9], [6.0, 0.0, 1.5]])
+    assert remove_ground_plane(person).shape[0] == 2
+
+
 def test_remove_ground_plane_empty_input():
     out = remove_ground_plane(np.zeros((0, 3)))
     assert out.shape == (0, 3)

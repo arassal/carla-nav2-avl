@@ -70,7 +70,11 @@ perception_costmap_node:
     #   cam_yaw_deg: -60.0
 
     lidar_topic: /lidar/points     # remappable launch arg; there's one lidar
-    lidar_z_min: -0.3
+    # z band kept as obstacles, in base_link (road surface is z ~= 0).
+    # lidar_z_min MUST be above the road: a negative value keeps every ground
+    # return and publishes the drivable surface as LETHAL. See
+    # obstacles.remove_ground_plane and DEPLOY.md section 6.
+    lidar_z_min: 0.15
     lidar_z_max: 3.0
 
     # segmentation_method: hsv | twinlitenet
