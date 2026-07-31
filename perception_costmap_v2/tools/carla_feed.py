@@ -45,6 +45,16 @@ IMG_W, IMG_H, FOV = 640, 480, 90
 LIDAR_MOUNT_Z = 1.8
 CAMERA_MOUNT_Z = 1.6
 
+# One lidar callback must carry ONE FULL ROTATION. CARLA slices a sweep
+# across whatever ticks happen during it, so on a free-running server
+# (~100 Hz) a 20 Hz lidar delivers ~1/5 of a rotation per callback -- a
+# ~72-degree wedge of a few hundred points. costmap_node.on_lidar REPLACES
+# its point set rather than accumulating, so the costmap would only ever see
+# that wedge and would clear obstacles the moment the wedge swept past them.
+# Running the world synchronously at exactly the rotation period makes one
+# tick == one sweep, which is what the downstream code assumes.
+LIDAR_HZ = 20.0
+
 
 def _require_carla():
     try:
@@ -99,6 +109,9 @@ def main():
     ap.add_argument("--dump-dir", default=None, help="if set, dump paired RGB/semantic PNGs here")
     ap.add_argument("--dump-every", type=int, default=10, help="dump every Nth tick")
     ap.add_argument("--ticks", type=int, default=0, help="0 = run until Ctrl-C")
+    ap.add_argument("--async", dest="sync", action="store_false",
+                    help="leave the server free-running; each lidar callback "
+                         "then carries only a partial sweep (see LIDAR_HZ)")
     args = ap.parse_args()
 
     carla = _require_carla()
@@ -110,6 +123,18 @@ def main():
         world = client.load_world(args.town)
     else:
         world = client.get_world()
+
+    # Synchronous mode is global server state, so remember what it was and
+    # put it back -- otherwise a Ctrl-C here leaves every other CARLA client
+    # on the box blocked waiting for ticks nobody sends any more.
+    original_settings = world.get_settings()
+    traffic_manager = client.get_trafficmanager()
+    if args.sync:
+        settings = world.get_settings()
+        settings.synchronous_mode = True
+        settings.fixed_delta_seconds = 1.0 / LIDAR_HZ
+        world.apply_settings(settings)
+        traffic_manager.set_synchronous_mode(True)
 
     bp_lib = world.get_blueprint_library()
     spawn_points = world.get_map().get_spawn_points()
@@ -137,7 +162,7 @@ def main():
     lidar_bp = bp_lib.find("sensor.lidar.ray_cast")
     lidar_bp.set_attribute("channels", "64")
     lidar_bp.set_attribute("range", "40")
-    lidar_bp.set_attribute("rotation_frequency", "20")
+    lidar_bp.set_attribute("rotation_frequency", str(LIDAR_HZ))
     lidar_transform = carla.Transform(carla.Location(x=0.0, z=LIDAR_MOUNT_Z))
     lidar = world.spawn_actor(lidar_bp, lidar_transform, attach_to=vehicle)
 
@@ -198,12 +223,18 @@ def main():
     try:
         n = 0
         while args.ticks == 0 or n < args.ticks:
-            world.wait_for_tick()
+            if args.sync:
+                world.tick()
+            else:
+                world.wait_for_tick()
             rclpy.spin_once(node, timeout_sec=0.0)
             n += 1
     except KeyboardInterrupt:
         pass
     finally:
+        if args.sync:
+            traffic_manager.set_synchronous_mode(False)
+            world.apply_settings(original_settings)
         for actor in (rgb_cam, sem_cam, lidar, vehicle):
             try:
                 actor.destroy()

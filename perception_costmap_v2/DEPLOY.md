@@ -56,6 +56,39 @@ PYTHONNOUSERSITE=1 PYTHONPATH=.:$PYTHONPATH python3 tools/carla_feed.py \
     --dump-dir /tmp/carla_eval_frames --dump-every 10
 ```
 
+`carla_feed.py` puts the server in **synchronous mode at 20 Hz** (matching
+the lidar's `rotation_frequency`) so that one tick equals one full lidar
+sweep. Do not remove this without reading the next section.
+
+### Why the feed forces synchronous mode
+
+A free-running CARLA server ticks at whatever framerate it manages (~100 Hz
+here). CARLA slices a lidar sweep across the ticks it spans, so a 20 Hz lidar
+on a 100 Hz server delivers a *fraction of a rotation* per callback --
+and `costmap_node.on_lidar` replaces its point set rather than accumulating,
+so the costmap would only ever hold that wedge. Obstacles would appear and
+then be cleared a few tens of milliseconds later as the wedge swept past.
+Measured on Town10HD_Opt (2026-07-31), binning each message's points into 36
+azimuth bins:
+
+| mode | points/msg | azimuth bins covered |
+|---|---|---|
+| `--async` (free-running) | 289-385 | 9-11 / 36 |
+| synchronous (default) | 1249-1339 | **36 / 36** |
+
+Two consequences to know about:
+
+- **It is global server state.** The feed saves the previous settings and
+  restores them (plus the traffic manager's sync flag) on exit. If it is
+  ever killed with `SIGKILL`, other CARLA clients on the box will hang
+  waiting for ticks nobody sends; reconnect and set
+  `synchronous_mode = False` to unstick them.
+- **The feed becomes the only clock.** Nothing advances unless this process
+  calls `world.tick()`, so don't run two tick-driving clients at once.
+
+`--async` restores the old behaviour if you specifically want it (e.g. to
+share the server with another tool that drives the clock).
+
 ### Environment gotchas on the AVL sim box (verified 2026-07-30)
 
 These cost an hour the first time; none of them are bugs in this package.
