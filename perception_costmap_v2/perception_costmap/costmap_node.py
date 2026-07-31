@@ -25,7 +25,7 @@ from .obstacles import (points_to_grid_mask, remove_ground_plane,
                         YoloObstacleDetector, detect_obstacles_classical,
                         camera_obstacle_mask_to_grid)
 from .temporal import TemporalObstacleFilter
-from .util import stamp_to_sec, is_fresh
+from .util import stamp_to_sec, is_fresh, image_msg_to_bgr, pointcloud2_to_xyz
 
 
 class CameraSource:
@@ -34,12 +34,14 @@ class CameraSource:
     `cameras: [...]` config list; costmap_node loops these each tick."""
 
     def __init__(self, name: str, H: np.ndarray, grid: GridSpec,
-                image_shape, max_age: float = 0.5):
+                image_shape, max_age: float = 0.5, image_topic: str = None):
         self.name = name
         self.H = H
         self.grid = grid
+        self.image_shape = image_shape
         self.known_mask = bev_known_mask(H, image_shape, grid)
         self.max_age = max_age
+        self.image_topic = image_topic or ("/camera/%s/image" % name)
         self.last_stamp_sec = None
         self.last_image = None
 
@@ -68,7 +70,8 @@ class CostmapNode:
                 lidar_z_min=-0.3, lidar_z_max=3.0,
                 temporal_enabled=True, temporal_kw=None,
                 offroad_cost=None, road_edge_radius=1.5,
-                unknown_infill=True):
+                unknown_infill=True, lidar_topic="/lidar/points",
+                publish_rate_hz=10.0):
         self.grid = grid
         self.cameras = cameras  # name -> CameraSource
         self.segmenter = create_segmenter(segmentation_method, **(segmentation_kw or {}))
@@ -80,9 +83,13 @@ class CostmapNode:
         self.offroad_cost = offroad_cost
         self.road_edge_radius = road_edge_radius
         self.unknown_infill = unknown_infill
+        self.lidar_topic = lidar_topic
+        self.publish_rate_hz = publish_rate_hz
         self._last_lidar_points = np.zeros((0, 3))
         self._last_lidar_stamp_sec = None
         self._lidar_max_age = 0.5
+        self._node = None
+        self._subs = []
 
     def on_lidar(self, points_xyz: np.ndarray, stamp_sec: float):
         self._last_lidar_points = remove_ground_plane(points_xyz, self.lidar_z_min, self.lidar_z_max)
@@ -171,10 +178,56 @@ class CostmapNode:
 
         self._costmap_pub = node.create_publisher(OccupancyGrid, "/perception/costmap", 1)
         self._node = node
-        # Per-camera / lidar subscriptions would be created here from the
-        # `cameras` config block; omitted because topic names and cv_bridge
-        # conversion are the one part that genuinely needs a running
-        # ROS graph + cv_bridge installed to exercise.
+
+        for cam in self.cameras.values():
+            self._subs.append(node.create_subscription(
+                Image, cam.image_topic, self._make_image_cb(cam), sensor_qos))
+            node.get_logger().info("camera %r <- %s" % (cam.name, cam.image_topic))
+
+        self._subs.append(node.create_subscription(
+            PointCloud2, self.lidar_topic, self._on_lidar_msg, sensor_qos))
+        node.get_logger().info("lidar <- %s" % self.lidar_topic)
+
+        period = 1.0 / float(self.publish_rate_hz)
+        self._timer = node.create_timer(period, self._on_timer)
+        return self._costmap_pub
+
+    def _now_sec(self) -> float:
+        return self._node.get_clock().now().nanoseconds * 1e-9
+
+    def _make_image_cb(self, cam: "CameraSource"):
+        def cb(msg):
+            # A decode failure must not kill the executor: one malformed
+            # frame (or a camera that changed encoding mid-run) would
+            # otherwise take down the whole costmap. Drop it, say so once
+            # per occurrence, and let staleness handle the consequences.
+            try:
+                img = image_msg_to_bgr(msg)
+            except ValueError as e:
+                self._node.get_logger().warn("camera %s: %s" % (cam.name, e))
+                return
+            if img.shape[:2] != tuple(cam.image_shape[:2]):
+                # known_mask was precomputed for the configured resolution;
+                # silently accepting another one would misplace every cell.
+                self._node.get_logger().warn(
+                    "camera %s: got %dx%d but configured for %dx%d -- ignoring "
+                    "frame (fix the config or the driver)"
+                    % (cam.name, img.shape[1], img.shape[0],
+                       cam.image_shape[1], cam.image_shape[0]))
+                return
+            cam.on_image(img, stamp_to_sec(msg.header.stamp))
+        return cb
+
+    def _on_lidar_msg(self, msg):
+        try:
+            pts = pointcloud2_to_xyz(msg)
+        except ValueError as e:
+            self._node.get_logger().warn("lidar: %s" % e)
+            return
+        self.on_lidar(pts, stamp_to_sec(msg.header.stamp))
+
+    def _on_timer(self):
+        self.publish(self._now_sec())
 
     def publish(self, now_sec: float):
         cost = self._tick(now_sec)
@@ -183,23 +236,107 @@ class CostmapNode:
         return cost
 
 
+def build_from_params(node):
+    """Construct a CostmapNode from an rclpy Node's declared parameters
+    (config/perception_costmap.yaml). Split out from main() so a launch file
+    or a test harness can build the node without owning the spin loop."""
+    from .bev import homography_from_extrinsics, homography_from_points
+
+    def p(name, default):
+        # main() creates the Node with
+        # automatically_declare_parameters_from_overrides=True so that the
+        # nested `front.*` blocks in the YAML arrive at all; anything the
+        # user actually set is therefore already declared, and re-declaring
+        # it raises. Declare only what's missing, so unset keys still get
+        # the defaults below.
+        if not node.has_parameter(name):
+            node.declare_parameter(name, default)
+        value = node.get_parameter(name).value
+        return default if value is None else value
+
+    grid = GridSpec(
+        x_min=p("grid_x_min", -4.0), x_max=p("grid_x_max", 16.0),
+        y_min=p("grid_y_min", -10.0), y_max=p("grid_y_max", 10.0),
+        resolution=p("grid_resolution", 0.1),
+    )
+
+    image_w = p("image_width", 640)
+    image_h = p("image_height", 480)
+    image_shape = (image_h, image_w)
+
+    cameras = {}
+    for name in p("cameras", ["front"]):
+        def cp(key, default):
+            return p("%s.%s" % (name, key), default)
+        fx = cp("fx", 320.0)
+        fy = cp("fy", fx)
+        K = np.array([[fx, 0.0, cp("cx", image_w / 2.0)],
+                      [0.0, fy, cp("cy", image_h / 2.0)],
+                      [0.0, 0.0, 1.0]], dtype=np.float64)
+        if cp("ipm_mode", "camera") == "points":
+            image_pts = np.array(cp("ipm_image_pts", [0.0] * 8), dtype=np.float64).reshape(4, 2)
+            world_pts = np.array(cp("ipm_world_pts", [0.0] * 8), dtype=np.float64).reshape(4, 2)
+            H = homography_from_points(image_pts, world_pts, grid)
+        else:
+            H = homography_from_extrinsics(
+                K, (cp("cam_x", 1.5), cp("cam_y", 0.0), cp("cam_height", 1.6)),
+                cp("cam_pitch_deg", 0.0), cp("cam_yaw_deg", 0.0), grid)
+        cameras[name] = CameraSource(
+            name, H, grid, image_shape,
+            max_age=cp("max_age_sec", 0.5),
+            image_topic=cp("image_topic", "/camera/%s/image" % name),
+        )
+
+    seg_kw = dict(
+        lower_hsv=tuple(p("segmentation_lower_hsv", [0, 0, 60])),
+        upper_hsv=tuple(p("segmentation_upper_hsv", [180, 60, 200])),
+        min_blob_area=p("segmentation_min_blob_area", 500),
+    )
+
+    return CostmapNode(
+        grid=grid, cameras=cameras,
+        segmentation_method=p("segmentation_method", "hsv"),
+        segmentation_kw=seg_kw,
+        obstacle_method=p("obstacle_method", "classical"),
+        lidar_z_min=p("lidar_z_min", -0.3),
+        lidar_z_max=p("lidar_z_max", 3.0),
+        temporal_enabled=p("temporal_enabled", True),
+        temporal_kw=dict(hit=p("temporal_hit", 0.4),
+                         miss=p("temporal_miss", 0.2),
+                         threshold=p("temporal_threshold", 0.5)),
+        offroad_cost=p("offroad_cost", 65),
+        road_edge_radius=p("road_edge_radius", 1.5),
+        unknown_infill=p("unknown_infill", True),
+        lidar_topic=p("lidar_topic", "/lidar/points"),
+        publish_rate_hz=p("publish_rate_hz", 10.0),
+    )
+
+
 def main(args=None):
     import rclpy
+    from rclpy.executors import ExternalShutdownException
     from rclpy.node import Node
 
     rclpy.init(args=args)
-    node = Node("perception_costmap_node")
-    node.get_logger().info(
-        "costmap_node scaffolded -- wire cameras/lidar from "
-        "config/perception_costmap.yaml before running against a real graph."
-    )
+    node = Node("perception_costmap_node",
+                automatically_declare_parameters_from_overrides=True)
+    costmap = build_from_params(node)
+    costmap.attach_ros(node)
+    node.get_logger().info("publishing /perception/costmap at %.1f Hz"
+                           % costmap.publish_rate_hz)
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
+    except ExternalShutdownException:
+        # SIGINT delivered by launch/systemd rather than a bare Ctrl-C:
+        # rclpy has already torn the context down. Without this the process
+        # exits with a traceback, which reads as a crash in journalctl.
+        pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":

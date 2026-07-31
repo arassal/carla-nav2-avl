@@ -263,11 +263,50 @@ source install/setup.bash
 ros2 run perception_costmap costmap_node --ros-args --params-file config/perception_costmap.yaml
 ```
 
-`attach_ros()` in `costmap_node.py` currently wires only the publisher --
-per-camera/lidar subscriptions (topic names + cv_bridge conversion) are
-the one piece that genuinely needs a live ROS graph to build out; that's
-the next task on a machine where `ros2 topic list` actually shows
-something.
+Or, without a colcon workspace (which is how it was brought up here):
+
+```bash
+PYTHONNOUSERSITE=1 PYTHONPATH=.:$PYTHONPATH python3 -m perception_costmap.costmap_node \
+    --ros-args --params-file config/perception_costmap.yaml
+```
+
+`attach_ros()` now creates the per-camera `Image` subscriptions, the lidar
+`PointCloud2` subscription and the publish timer, all from the config block.
+Decoding is plain numpy in `util.image_msg_to_bgr` / `util.pointcloud2_to_xyz`
+rather than cv_bridge -- that keeps the subscription path in the offline test
+suite (`test/test_msg_decode.py`) and keeps cv_bridge off the Jetson
+dependency list. `pointcloud2_to_xyz` reads x/y/z by declared field offset,
+so a real driver's x,y,z,intensity,ring cloud decodes correctly.
+
+Verified end to end against CARLA (2026-07-31): `/perception/costmap` at
+**10.005 Hz**, 200x200 cells at 0.1 m, origin (-4.0, -10.0), with free /
+lethal / off-road / inflation costs all present.
+
+Two things to know before running it:
+
+- **`use_sim_time` must be false** unless something actually publishes
+  `/clock`. `carla_feed.py` stamps with the wall clock, so leaving it true
+  makes every reading look infinitely stale and the costmap stays unknown
+  forever. The shipped config sets it false.
+- **Frame size is pinned** by `image_width`/`image_height`, because
+  `known_mask` is precomputed from it. Frames of any other size are logged
+  and dropped rather than silently misprojected.
+
+### Known issue: the costmap freezes when every sensor dies
+
+Measured here: kill the feed and the node keeps publishing at 10 Hz with
+**6.69% of cells still lethal, bit-identical, 40+ seconds later**. The
+staleness guards work -- road drops to 0% free immediately -- but
+`TemporalObstacleFilter` only decays confidence on cells it *observed* this
+tick, and with nothing fresh there are no observed cells, so the last
+obstacle set is latched forever.
+
+The failure is in the conservative direction (phantom obstacles, not phantom
+free space), which is why it survived the offline suite: every test feeds it
+at least one fresh sensor. It still means the costmap asserts knowledge it
+does not have. Fixing it is a design decision -- decay everywhere when
+nothing is fresh, or publish an all-unknown grid and let Nav2's own
+staleness handling take over -- so it is deliberately left as-is here.
 
 ## 6. Nav2 acceptance checklist
 

@@ -12,19 +12,35 @@
 
 perception_costmap_node:
   ros__parameters:
-    use_sim_time: true
+    # false unless something actually publishes /clock. tools/carla_feed.py
+    # stamps with the wall clock, so true would leave every sensor reading
+    # looking infinitely stale and the costmap permanently unknown.
+    use_sim_time: false
 
     cameras: ["front"]
+
+    # Frame size the cameras are expected to publish. known_mask is
+    # precomputed from this, so frames of any other size are rejected rather
+    # than silently misprojected.
+    image_width: 640
+    image_height: 480
 
     front:
       image_topic: /camera/front/image
       camera_info_topic: /camera/front/camera_info
       max_age_sec: 0.5
       ipm_mode: camera            # or "points"
+      # Intrinsics for tools/carla_feed.py's camera: 640x480 at FOV 90
+      # => fx = fy = (W/2)/tan(FOV/2) = 320. Verified against CARLA's own
+      # projection to 0.32 px -- see DEPLOY.md section 3.
+      fx: 320.0
+      fy: 320.0
+      cx: 320.0
+      cy: 240.0
       cam_x: 1.5
       cam_y: 0.0
       cam_height: 1.6
-      cam_pitch_deg: 12.0
+      cam_pitch_deg: 0.0
       cam_yaw_deg: 0.0
       # points-mode alternative (used when ipm_mode: points):
       # ipm_image_pts: [[100,480],[540,480],[220,300],[420,300]]
