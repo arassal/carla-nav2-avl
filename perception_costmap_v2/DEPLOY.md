@@ -27,8 +27,9 @@ to do next on a machine that actually has CARLA and/or a GPU.
 cd perception_costmap_v2
 pip install -r requirements.txt --break-system-packages   # or a venv
 
-# confirm the ported algorithm still passes on real hardware (should match
-# the 68 passed / 0 failed we got in the no-GPU sandbox)
+# confirm the ported algorithm still passes on real hardware (88 passed /
+# 0 failed as of 2026-07-31; it was 68 before the CARLA bring-up below
+# added regression tests for what that turned up)
 PYTHONPATH=. python3 -m pytest test -q
 
 # if a ROS2 environment is sourced, pytest auto-loads ROS's launch_testing
@@ -196,11 +197,10 @@ print(ct.location.z - road_z)      # <-- this is --cam-height
 
 The same reasoning applies to `LIDAR_MOUNT_Z = 1.8` feeding
 `carla_lidar_to_rep103(sensor_z=...)`: measured on a settled vehicle the
-true lidar height is 1.793 m, so the shipped 1.8 is right and
-`remove_ground_plane`'s `z_min = -0.3` band keeps its full margin. (Had the
-0.3 m offset been real it would have been serious -- ground returns would
-land at exactly z = -0.3, right on the rejection boundary, and half the road
-surface would have entered the costmap as lethal obstacles.)
+true lidar height is 1.793 m, so the shipped 1.8 is right. That means road
+returns land at z ~= 0 exactly as intended -- which is what makes
+`remove_ground_plane`'s `z_min` the thing that has to be above zero. See
+section 6; the shipped `-0.3` kept the entire road surface and is fixed.
 
 Open `/tmp/overlay.png` and confirm the drawn 1m grid lines land where a
 tape measure would put them. Do this for every camera before trusting
