@@ -17,15 +17,46 @@ import cv2
 def segment_road_hsv(img_bgr,
                      max_sat: int = 60,
                      val_lo: int = 40,
-                     val_hi: int = 200) -> np.ndarray:
+                     val_hi: int = 200,
+                     use_clahe: bool = True,
+                     min_blob_frac: float = 0.15) -> np.ndarray:
     """
     Classical road mask: asphalt is low-saturation, mid-brightness. Threshold
-    in HSV, clean up, then keep only the largest connected blob (the road).
-    Returns a boolean mask the size of the image.
+    in HSV, clean up, then keep connected blobs, and returns a boolean mask
+    the size of the image.
 
-    HSV ranges are lighting-dependent -- recalibrate for the real camera, or
-    switch to the learned segmenter.
+    2026-08-12: two shadow-robustness fixes, made after a real stuck-in-shadow
+    incident (vehicle treated shadowed pavement ahead as off-road and refused
+    to proceed):
+
+    1. CLAHE (local contrast normalization) on the L channel before HSV
+       thresholding. A raw global val_lo/val_hi cutoff can't tell "this pixel
+       is genuinely dark asphalt/gravel" from "this pixel is normal asphalt
+       sitting in a shadow" -- both just read as low V. CLAHE equalizes
+       brightness using LOCAL neighborhood statistics, so the same physical
+       surface reads similarly whether lit or shadowed, instead of a shadow
+       band pushing V below val_lo and flipping pixels to non-road. CLAHE
+       only touches lightness, not hue/saturation, so it doesn't loosen the
+       max_sat gate that keeps green grass correctly classified as off-road
+       (see perception_dinosaur.yaml offroad_cost:97 / costmap_to_cloud.py --
+       this segmenter feeds that same road/grass distinction).
+    2. Keep every blob at least min_blob_frac the size of the largest, not
+       ONLY the single largest. A shadow band crossing the road can visually
+       split one contiguous road region into two disconnected blobs even
+       after CLAHE; picking only the biggest one would silently drop the far
+       side of the shadow as "not road" -- exactly the stuck-at-shadow
+       symptom, just from the blob-selection step instead of the threshold.
+
+    HSV ranges are still lighting-dependent at the margins -- recalibrate for
+    the real camera, or switch to the learned segmenter, if this isn't enough.
     """
+    if use_clahe:
+        lab = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2LAB)
+        l, a, b = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+        l = clahe.apply(l)
+        img_bgr = cv2.cvtColor(cv2.merge((l, a, b)), cv2.COLOR_LAB2BGR)
+
     hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
     _, s, v = cv2.split(hsv)
     mask = ((s < max_sat) & (v > val_lo) & (v < val_hi)).astype(np.uint8) * 255
@@ -36,8 +67,10 @@ def segment_road_hsv(img_bgr,
 
     num, labels, stats, _ = cv2.connectedComponentsWithStats(mask)
     if num > 1:
-        largest = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
-        mask = np.where(labels == largest, 255, 0).astype(np.uint8)
+        areas = stats[1:, cv2.CC_STAT_AREA]
+        largest_area = areas.max()
+        keep_labels = 1 + np.where(areas >= min_blob_frac * largest_area)[0]
+        mask = np.isin(labels, keep_labels).astype(np.uint8) * 255
     return mask > 0
 
 

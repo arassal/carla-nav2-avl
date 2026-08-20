@@ -92,8 +92,20 @@ perception_costmap:
     image_stale_sec: 1.0   # was 0.5: front cam (8 Hz) + tick jitter crossed it, wedge flickered known<->unknown
     lidar_stale_sec: 0.5
 
+    # 2026-08-12: temporal_miss 0.2 -> 0.4 (now symmetric with temporal_hit).
+    # Root cause of a real stuck-in-shadow incident: dappled tree-shadow
+    # noise during active motion produced a burst of bad per-frame hits that
+    # saturated a cell's confidence to 1.0; at the old asymmetric hit=0.4/
+    # miss=0.2, clearing from max needed 3 consecutive good frames (~375ms
+    # at the front camera's 8 Hz) even after the segmentation itself had
+    # already recovered -- long enough to stall MPPI/the BT. Symmetric
+    # hit/miss still needs 2 consecutive bad frames to mark lethal (same
+    # real-obstacle sensitivity), but now clears in 2 good frames instead of
+    # 3. This ONLY affects the camera road/off-road layer feeding
+    # costmap_to_cloud.py -- STVL (LiDAR) obstacle persistence is a separate,
+    # untouched mechanism, so real physical obstacle detection is unaffected.
     temporal_hit: 0.4
-    temporal_miss: 0.2
+    temporal_miss: 0.4
     temporal_threshold: 0.5
     temporal_enabled: true
 
