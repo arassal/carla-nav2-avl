@@ -118,10 +118,10 @@ def inflate_costs(obstacle_mask: np.ndarray, resolution: float,
 # scaling = the cost stays high further out (people). Small radius + LARGE
 # scaling = cost collapses within centimetres (cars, cones).
 DEFAULT_OBSTACLE_CLASSES = {
-    "person":  dict(radius=2.5, scaling=1.5),   # wide, slow decay: keep clear
-    "vehicle": dict(radius=1.0, scaling=5.0),   # tight: passing close is normal
-    "cone":    dict(radius=0.6, scaling=5.0),   # tight
-    "generic": dict(radius=0.8, scaling=4.0),   # unclassified blob: old default
+    "person":  dict(radius=2.5, scaling=1.5, exclusion_radius=1.2),
+    "vehicle": dict(radius=1.5, scaling=2.5, exclusion_radius=0.6),
+    "cone":    dict(radius=0.6, scaling=5.0, exclusion_radius=0.2),
+    "generic": dict(radius=1.0, scaling=3.0, exclusion_radius=0.5),
 }
 
 # Distance (m) over which cost ramps up as you approach the road edge from
@@ -188,7 +188,8 @@ def build_cost_array(grid: GridSpec,
                      road_edge_radius: float = 0.0,
                      road_edge_scaling: float = DEFAULT_ROAD_EDGE_SCALING,
                      unknown_infill: bool = False,
-                     infill_falloff: float = 2.0) -> np.ndarray:
+                     infill_falloff: float = 2.0,
+                     min_offroad_width_m: float = 0.0) -> np.ndarray:
     """
     Fuse grid-space boolean masks into an int8 cost array (height, width).
 
@@ -206,14 +207,28 @@ def build_cost_array(grid: GridSpec,
     lane) and renders as a flat plateau of colour.
 
     ``obstacle_layers`` maps a class name -> {"mask": bool array, "radius": m,
-    "scaling": float}. Each layer is inflated with its own parameters and
-    combined with ``np.maximum``, so overlapping halos take the worst case.
+    "scaling": float, "exclusion_radius": m}. Each layer is inflated with its
+    own parameters and combined with ``np.maximum``, so overlapping halos take
+    the worst case. ``exclusion_radius`` promotes the class-specific inner zone
+    to LETHAL. This is intentionally distinct from the soft halo: downstream
+    bridges that consume only lethal/near-lethal cells still preserve semantic
+    clearance instead of flattening every class to one obstacle radius.
     When omitted, ``obstacle_mask`` is inflated with the single legacy
     ``inflation_radius`` / ``cost_scaling_factor`` (backwards compatible).
 
     Road is clipped to ``known_mask``: a "road" pixel outside the observed
     footprint must never mark unobserved ground drivable. Obstacles are NOT
     clipped -- a spurious obstacle is the safe direction.
+
+    ``min_offroad_width_m`` (0 = off, backwards compatible): a morphological
+    opening applied to the off-road region BEFORE road-edge inflation, to
+    drop features narrower than this width. Found 2026-07-30: a hairline
+    concrete expansion joint/crack, misread by segmentation as a sliver of
+    off-road, gets road_edge_radius-inflated into a wide near-lethal streak
+    just like a real curb would -- the inflation is doing its job, the input
+    to it is the problem. A real off-road region (grass, a wall) is always
+    much wider than a crack, so opening with a small kernel removes the
+    hairline false positives while leaving genuine off-road untouched.
     """
     shape = (grid.height, grid.width)
     for name, m in (("road_mask", road_mask), ("obstacle_mask", obstacle_mask)):
@@ -233,6 +248,12 @@ def build_cost_array(grid: GridSpec,
     # region it grows out of -- no discontinuity at the boundary.
     if road_edge_radius > 0:
         offroad_region = known_mask & ~road
+        if min_offroad_width_m > 0:
+            k = max(1, round(min_offroad_width_m / grid.resolution))
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * k + 1, 2 * k + 1))
+            offroad_region = cv2.morphologyEx(
+                offroad_region.astype(np.uint8), cv2.MORPH_OPEN, kernel
+            ).astype(bool)
         if offroad_region.any():
             edge = inflate_costs(offroad_region, grid.resolution,
                                  road_edge_radius, road_edge_scaling,
@@ -246,14 +267,24 @@ def build_cost_array(grid: GridSpec,
             cost = np.maximum(cost, edge)
 
     # Obstacle halos: per-class if given, else the single legacy halo.
+    lethal_mask = obstacle_mask.astype(bool).copy()
     if obstacle_layers:
         for spec in obstacle_layers.values():
             m = spec["mask"]
             if m is None or not m.any():
                 continue
+            if m.shape != shape:
+                raise ValueError(
+                    f"obstacle layer shape {m.shape} != grid {shape}")
             cost = np.maximum(cost, inflate_costs(
                 m.astype(bool), grid.resolution,
                 spec["radius"], spec["scaling"]))
+            exclusion_radius = float(spec.get("exclusion_radius", 0.0))
+            if exclusion_radius > 0.0:
+                exclusion = inflate_costs(
+                    m.astype(bool), grid.resolution, exclusion_radius,
+                    cost_scaling_factor=1.0)
+                lethal_mask |= exclusion >= 0.0
     else:
         cost = np.maximum(cost, inflate_costs(
             obstacle_mask, grid.resolution,
@@ -267,7 +298,7 @@ def build_cost_array(grid: GridSpec,
                               prior=float(unknown_cost),
                               falloff_m=infill_falloff)
 
-    cost[obstacle_mask.astype(bool)] = LETHAL   # obstacle cells: exact lethal
+    cost[lethal_mask] = LETHAL
     return np.clip(cost, -1, LETHAL).astype(np.int8)
 
 

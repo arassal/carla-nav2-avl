@@ -17,6 +17,7 @@ import numpy as np
 import cv2
 
 from .occupancy import GridSpec
+from . import bev
 
 
 # --------------------------------------------------------------------------
@@ -84,7 +85,7 @@ class YoloObstacleDetector:
     def __init__(self, weights="yolov8n.pt", classes=DEFAULT_CLASSES,
                  conf=0.35, footprint_frac=0.25, device=None):
         from ultralytics import YOLO          # lazy: optional dependency
-        self.model = YOLO(weights)
+        self.model = YOLO(weights, task="detect")
         self.classes = set(classes)
         self.conf = conf
         self.footprint_frac = footprint_frac
@@ -166,7 +167,7 @@ class ConeDetector:
 
     def __init__(self, weights="cone_det.pt", conf=0.35, device=None):
         from ultralytics import YOLO          # lazy: optional dependency
-        self.model = YOLO(weights)
+        self.model = YOLO(weights, task="detect")
         self.conf = conf
         self.device = device
 
@@ -216,3 +217,91 @@ def points_to_grid_mask(points_xyz: np.ndarray, grid: GridSpec) -> np.ndarray:
     ok = (cols >= 0) & (cols < grid.width) & (rows >= 0) & (rows < grid.height)
     mask[rows[ok], cols[ok]] = True
     return mask
+
+
+def depth_mask_to_grid(image_mask, depth_m, K, cam_xyz, pitch_deg, yaw_deg,
+                       grid, min_depth=0.3, max_depth=20.0,
+                       min_points=8, dilation_m=0.15, confidence=None,
+                       max_confidence=70.0, edge_erode_px=1,
+                       depth_mad_scale=3.5, depth_relative_tolerance=0.12,
+                       return_stats=False):
+    """Project masked registered-depth pixels directly into the metric grid.
+
+    Returns ``None`` when depth is unavailable or insufficient so callers can
+    explicitly fall back to ground-plane IPM. Otherwise returns a grid mask.
+    """
+    stats = {
+        "mask_points": int(np.count_nonzero(image_mask)),
+        "valid_points": 0,
+        "confidence_rejected": 0,
+        "outlier_rejected": 0,
+        "confidence_available": confidence is not None,
+    }
+
+    def finished(result):
+        return (result, stats) if return_stats else result
+
+    if depth_m is None or K is None or image_mask.shape != depth_m.shape:
+        return finished(None)
+    if confidence is not None and confidence.shape != depth_m.shape:
+        confidence = None
+        stats["confidence_available"] = False
+
+    source_mask = image_mask.astype(np.uint8)
+    if edge_erode_px > 0:
+        size = 2 * int(edge_erode_px) + 1
+        eroded = cv2.erode(source_mask, np.ones((size, size), np.uint8))
+        if np.count_nonzero(eroded) >= int(min_points):
+            source_mask = eroded
+
+    valid_range = (np.isfinite(depth_m)
+                   & (depth_m >= min_depth) & (depth_m <= max_depth))
+    if confidence is not None:
+        confidence_ok = np.isfinite(confidence) & (confidence <= max_confidence)
+        stats["confidence_rejected"] = int(np.count_nonzero(
+            source_mask.astype(bool) & valid_range & ~confidence_ok))
+        valid_range &= confidence_ok
+
+    # Robustly reject background bleed at detection boundaries. Work per
+    # connected component so nearby objects at different ranges survive.
+    _, labels = cv2.connectedComponents(source_mask)
+    accepted = np.zeros_like(source_mask, dtype=bool)
+    for label in range(1, int(labels.max()) + 1):
+        component = (labels == label) & valid_range
+        values = depth_m[component]
+        if values.size < int(min_points):
+            continue
+        median = float(np.median(values))
+        mad = float(np.median(np.abs(values - median)))
+        tolerance = max(
+            0.08,
+            float(depth_relative_tolerance) * median,
+            float(depth_mad_scale) * 1.4826 * mad,
+        )
+        keep = component & (np.abs(depth_m - median) <= tolerance)
+        stats["outlier_rejected"] += int(np.count_nonzero(component & ~keep))
+        accepted |= keep
+
+    rows, cols = np.nonzero(accepted)
+    stats["valid_points"] = int(len(rows))
+    if len(rows) < int(min_points):
+        return finished(None)
+
+    # Bound projection cost for large masks without biasing one image region.
+    stride = max(1, int(np.ceil(len(rows) / 3000.0)))
+    rows, cols = rows[::stride], cols[::stride]
+    z = depth_m[rows, cols].astype(np.float64)
+    fx, fy = float(K[0, 0]), float(K[1, 1])
+    cx, cy = float(K[0, 2]), float(K[1, 2])
+    optical = np.column_stack(((cols - cx) * z / fx,
+                               (rows - cy) * z / fy,
+                               z))
+    robot = bev.optical_points_to_robot(
+        optical, cam_xyz, pitch_deg, yaw_deg)
+    result = points_to_grid_mask(robot, grid)
+    radius = max(0, int(round(float(dilation_m) / grid.resolution)))
+    if radius and result.any():
+        kernel = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE, (2 * radius + 1, 2 * radius + 1))
+        result = cv2.dilate(result.astype(np.uint8), kernel).astype(bool)
+    return finished(result)

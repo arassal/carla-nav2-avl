@@ -104,6 +104,24 @@ def homography_from_camera(K, cam_height, pitch_deg, grid: GridSpec) -> np.ndarr
     return homography_from_extrinsics(K, (0.0, 0.0, cam_height), pitch_deg, 0.0, grid)
 
 
+def optical_points_to_robot(points_xyz, cam_xyz, pitch_deg, yaw_deg):
+    """Transform OpenCV optical-frame XYZ points into the robot frame."""
+    points = np.asarray(points_xyz, dtype=np.float64).reshape(-1, 3)
+    th = np.radians(pitch_deg)
+    yw = np.radians(yaw_deg)
+    r0 = np.array([[0.0, -1.0, 0.0],
+                   [0.0, 0.0, -1.0],
+                   [1.0, 0.0, 0.0]])
+    rx = np.array([[1.0, 0.0, 0.0],
+                   [0.0, np.cos(th), -np.sin(th)],
+                   [0.0, np.sin(th), np.cos(th)]])
+    rz_inv = np.array([[np.cos(yw), np.sin(yw), 0.0],
+                       [-np.sin(yw), np.cos(yw), 0.0],
+                       [0.0, 0.0, 1.0]])
+    world_to_camera = rx @ r0 @ rz_inv
+    return points @ world_to_camera + np.asarray(cam_xyz, dtype=np.float64)
+
+
 def warp_to_bev(image, H, grid: GridSpec, interp=cv2.INTER_NEAREST):
     """Warp an image/mask from camera view to the BEV grid (height, width)."""
     return cv2.warpPerspective(image, H, (grid.width, grid.height), flags=interp)
