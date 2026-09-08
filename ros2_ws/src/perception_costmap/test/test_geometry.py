@@ -145,6 +145,12 @@ def test_yawed_camera_rotates_ground_points():
     assert abs(xl - (-yf)) < 0.05 and abs(yl - xf) < 0.05
 
 
+def test_optical_depth_point_transforms_to_forward_robot_axis():
+    point = bev.optical_points_to_robot(
+        np.array([[0.0, 0.0, 5.0]]), (0.5, 0.0, 1.0), 0.0, 0.0)[0]
+    assert np.allclose(point, [5.5, 0.0, 1.0])
+
+
 def test_draw_grid_overlay_changes_pixels_and_preserves_input():
     from perception_costmap.bev import draw_grid_on_image
     g = GridSpec(x_min=0, x_max=10, y_min=-5, y_max=5, resolution=0.1)
@@ -197,3 +203,44 @@ def test_obstacle_inflation_bleeds_into_blind_cells():
     assert cost[50, 52] > 25        # blind cell 0.2m away: inflated
     assert cost[50, 51] > cost[50, 53]   # decays with distance
     assert cost[50, 90] == 25       # far blind cell: plain penalty
+
+
+def test_semantic_exclusion_radius_survives_high_cost_bridge():
+    g = GridSpec(x_min=0, x_max=6, y_min=0, y_max=4, resolution=0.1)
+    shape = (g.height, g.width)
+    road = np.ones(shape, bool)
+    known = np.ones(shape, bool)
+    person = np.zeros(shape, bool)
+    vehicle = np.zeros(shape, bool)
+    person[10, 10] = True
+    vehicle[30, 10] = True
+    obstacles = person | vehicle
+    layers = {
+        "person": {
+            "mask": person, "radius": 2.0, "scaling": 1.5,
+            "exclusion_radius": 1.0,
+        },
+        "vehicle": {
+            "mask": vehicle, "radius": 1.0, "scaling": 3.0,
+            "exclusion_radius": 0.4,
+        },
+    }
+
+    cost = build_cost_array(
+        g, road, obstacles, known_mask=known, obstacle_layers=layers)
+
+    assert cost[10, 18] == LETHAL   # 0.8 m from person: hard exclusion
+    assert 0 < cost[30, 18] < 97    # same distance from vehicle: soft only
+    assert cost[30, 13] == LETHAL   # 0.3 m from vehicle: hard exclusion
+
+
+def test_semantic_obstacle_layer_shape_mismatch_raises():
+    g = GridSpec(x_min=0, x_max=2, y_min=0, y_max=2, resolution=1.0)
+    shape = (g.height, g.width)
+    with pytest.raises(ValueError):
+        build_cost_array(
+            g, np.ones(shape, bool), np.zeros(shape, bool),
+            obstacle_layers={"bad": {
+                "mask": np.ones((3, 3), bool), "radius": 1.0,
+                "scaling": 1.0, "exclusion_radius": 0.5,
+            }})

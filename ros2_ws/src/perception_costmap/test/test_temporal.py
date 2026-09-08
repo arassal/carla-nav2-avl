@@ -1,5 +1,6 @@
 import numpy as np
 from perception_costmap.temporal import TemporalObstacleFilter
+from perception_costmap.occupancy import GridSpec
 
 
 def _masks(shape, obstacle_cells):
@@ -34,3 +35,22 @@ def test_unobserved_cells_hold_confidence():
     unseen = np.zeros((3, 3), bool)
     out = f.update(np.zeros((3, 3), bool), unseen)   # camera looked away
     assert out[1, 1]                           # still lethal — no evidence it left
+
+
+def test_motion_compensation_moves_world_fixed_obstacle_backwards():
+    grid = GridSpec(x_min=-2, x_max=3, y_min=-2, y_max=3, resolution=1.0)
+    f = TemporalObstacleFilter((grid.height, grid.width))
+    f.conf[2, 3] = 1.0  # obstacle at x=1.5 in the previous robot frame
+    f.compensate_motion((0, 0, 0), (1, 0, 0), grid)
+    # Robot moved +1 m, so the stationary obstacle is now one cell behind.
+    assert f.conf[2, 2] > 0.99
+    assert f.conf[2, 3] < 0.01
+
+
+def test_motion_compensation_rotates_world_fixed_obstacle():
+    grid = GridSpec(x_min=-2, x_max=3, y_min=-2, y_max=3, resolution=1.0)
+    f = TemporalObstacleFilter((grid.height, grid.width))
+    f.conf[2, 3] = 1.0  # x=1.5, y=0.5
+    f.compensate_motion((0, 0, 0), (0, 0, np.pi / 2), grid)
+    # A +90 degree robot rotation moves the old forward point to robot-right.
+    assert f.conf[0:2, 2:4].max() > 0.9
