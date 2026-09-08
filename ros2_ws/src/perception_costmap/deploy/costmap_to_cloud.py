@@ -19,23 +19,54 @@ raytrace-clears free space. No rotation assumption, no fixed-map assumption.
 So we hand the costmap's occupied cells over as a point cloud in base_link
 and let ObstacleLayer do what it is designed to do.
 """
-import math
-
 import numpy as np
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from nav_msgs.msg import OccupancyGrid
 from sensor_msgs.msg import PointCloud2
 from sensor_msgs_py import point_cloud2
 
-OBST_THRESH = 97      # >=97 is near-lethal (kerb/wall) or lethal in this stack
-POINT_Z = 0.35        # inside obstacle_layer's [min_obstacle_height, max]
-
+from perception_costmap.costmap_cloud import raycast_costmap
 
 class CostmapToCloud(Node):
     def __init__(self):
         super().__init__("costmap_to_cloud")
+        self.declare_parameter("obstacle_threshold", 97)
+        self.declare_parameter("point_z", 0.35)
+        self.declare_parameter("angle_min_deg", -100.0)
+        self.declare_parameter("angle_max_deg", 100.0)
+        self.declare_parameter("angle_increment_deg", 0.5)
+        self.declare_parameter("min_range_m", 0.3)
+        self.declare_parameter("obstacle_range_m", 15.0)
+        self.declare_parameter("raytrace_range_m", 16.0)
+
+        self.obstacle_threshold = int(
+            self.get_parameter("obstacle_threshold").value)
+        self.point_z = float(self.get_parameter("point_z").value)
+        angle_min = float(self.get_parameter("angle_min_deg").value)
+        angle_max = float(self.get_parameter("angle_max_deg").value)
+        angle_step = float(self.get_parameter("angle_increment_deg").value)
+        self.min_range = float(self.get_parameter("min_range_m").value)
+        self.obstacle_range = float(
+            self.get_parameter("obstacle_range_m").value)
+        self.raytrace_range = float(
+            self.get_parameter("raytrace_range_m").value)
+        if not (0.0 < self.min_range < self.obstacle_range < self.raytrace_range):
+            raise ValueError(
+                "expected min_range < obstacle_range < raytrace_range")
+        if angle_step <= 0.0 or angle_max <= angle_min:
+            raise ValueError("invalid angular sampling configuration")
+
+        self.angles = np.radians(
+            np.arange(angle_min, angle_max + 0.5 * angle_step, angle_step))
+        self.ranges = np.arange(self.min_range, self.obstacle_range, 0.05)
+        self.ray_x = np.cos(self.angles)[:, None] * self.ranges[None, :]
+        self.ray_y = np.sin(self.angles)[:, None] * self.ranges[None, :]
+        self.clear_x = np.cos(self.angles) * self.raytrace_range
+        self.clear_y = np.sin(self.angles) * self.raytrace_range
+
         self.pub = self.create_publisher(PointCloud2, "/perception/costmap_cloud", 1)
         self.create_subscription(OccupancyGrid, "/perception/costmap",
                                  self.cb, qos_profile_sensor_data)
@@ -65,28 +96,13 @@ class CostmapToCloud(Node):
         # 16 m forward / +/-10 m lateral, so obstacles beyond 15 m or in the
         # far rear-lateral corners are not emitted -- acceptable at the 1-2 mph
         # cap, but widen these if the speed cap or grid extent changes.
-        A = np.radians(np.arange(-100.0, 100.5, 0.5))
-        R = np.arange(0.3, 15.0, 0.05)
-        X = np.cos(A)[:, None] * R[None, :]
-        Y = np.sin(A)[:, None] * R[None, :]
-        ix = ((X - ox) / r).astype(np.int32)
-        iy = ((Y - oy) / r).astype(np.int32)
-        ok = (ix >= 0) & (ix < W) & (iy >= 0) & (iy < H)
-        v = np.full(X.shape, -1, dtype=np.int16)
-        v[ok] = grid[iy[ok], ix[ok]]
-
-        hit = v >= OBST_THRESH
-        has_hit = hit.any(axis=1)
-        first = hit.argmax(axis=1)
-        rows = np.nonzero(has_hit)[0]
-        if len(rows) == 0:
-            pts = np.zeros((0, 3), dtype=np.float32)
-        else:
-            cols = first[rows]
-            x = X[rows, cols].astype(np.float32)
-            y = Y[rows, cols].astype(np.float32)
-            z = np.full_like(x, POINT_Z)
-            pts = np.stack([x, y, z], axis=1)
+        # Every bearing gets an endpoint. Hits end on the nearest obstacle;
+        # clear bearings end beyond obstacle_max_range so Nav2 raytraces them
+        # without marking a synthetic obstacle at the endpoint.
+        pts, has_hit = raycast_costmap(
+            grid, r, ox, oy, self.ray_x, self.ray_y,
+            self.clear_x, self.clear_y, self.obstacle_threshold, self.point_z)
+        rows = np.flatnonzero(has_hit)
 
         header = msg.header          # base_link, same stamp -- TF handles the rest
         cloud = point_cloud2.create_cloud_xyz32(header, pts.tolist())
@@ -95,7 +111,8 @@ class CostmapToCloud(Node):
         self.n += 1
         if self.n % 20 == 0:
             self.get_logger().info(
-                f"published {self.n} clouds, latest {len(pts)} obstacle points "
+                f"published {self.n} clouds, latest {len(rows)} marked rays, "
+                f"{len(pts) - len(rows)} clearing rays "
                 f"(frame={header.frame_id})")
 
 
@@ -104,7 +121,7 @@ def main():
     node = CostmapToCloud()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.destroy_node()

@@ -18,7 +18,8 @@ if [ "$1" = "--boot" ]; then
 fi
 
 CFG=/home/dinosaur/IGVC/install/avros_bringup/share/avros_bringup/config
-E="export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && export CYCLONEDDS_URI=file://$CFG/cyclonedds.xml"
+MODELS=/home/dinosaur/models
+E="export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp && export CYCLONEDDS_URI=file://$CFG/cyclonedds.xml && export AVL_MODELS_DIR=$MODELS"
 
 tmux -L percept kill-session -t percept 2>/dev/null || true
 pkill -f "zed_camera.launch.py" 2>/dev/null || true
