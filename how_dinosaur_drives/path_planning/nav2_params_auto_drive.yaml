@@ -1,0 +1,580 @@
+# Nav2 parameters — IGVC 2026 AutoNav COMPETITION config (Humble)
+# ================================================================
+# DUPLICATE of nav2_params_humble.yaml, tuned 2026-06-01 for the IGVC AutoNav
+# run. Differential-drive tracked chassis (AndyMark Raptor), 0.7366 m track
+# gauge. Can rotate in place and reverse; not Ackermann.
+#
+# MUST be launched together with navigate_igvc_autonav_2026.xml — the BT and
+# this params file are a matched pair (competition watchdog/recovery timings on
+# one side, costmap/controller gradients on the other). Do NOT mix this params
+# file with the field-test BT or vice versa.
+#
+# LOAD-BEARING DELTAS vs nav2_params_humble.yaml (full rationale at each line,
+# marker "# IGVC-AUTONAV 2026-06-01: ..."):
+#   1. INFLATION GRADIENT RESTORE — the freeze fix. local inflation_radius
+#      0.4 -> 0.85, global 0.4 -> 0.65: the live 0.12 m graded band gave MPPI/
+#      Navfn no early-steer gradient (flat cost field -> softmax-averaged
+#      command collapses to zero -> robot freezes behind a barrel). Wider
+#      monotonic basins restore a descendable centerline gradient. Paired
+#      controller eases: PathAlignCritic 16->12, CostCritic 6->5 (valid ONLY
+#      with local inflation 0.85), wz_std 0.4->0.5, temperature 0.3->0.25,
+#      ax_max 0.4->0.8.
+#   2. RECOVERY PROMPTNESS — the recovery-enabling half. progress_checker
+#      movement_time_allowance 120 -> 12 s (a frozen robot now trips recovery
+#      ~12 s in, not never) + failure_tolerance unset -> 0.5 s (absorb single-
+#      frame MPPI glitches first). Fires recovery well under the IGVC 60 s
+#      Blocking/Hold-up DQ.
+#   3. COMPETITION BT PAIRING — the BT (navigate_igvc_autonav_2026.xml) carries
+#      the matching Timeout 45000, retries 4, forward-crawl-before-blind-backup
+#      RoundRobin, surgical reset_distance 1.5, RateController 2 Hz.
+#   Plus STVL local max_obstacle_height 0.8->1.0 (full-drum marking) and four
+#   velocity_smoother actuator-syncs (inert until the cmd_vel chain is wired).
+#
+# DO NOT modify nav2_params_humble.yaml — that remains the field-test config.
+#
+# KEEP IN SYNC with nav2_params.yaml (Jazzy). Differences:
+#   - bt_navigator.plugin_lib_names: required (Jazzy auto-discovers)
+#   - planner/behavior plugins: '/' notation (Jazzy uses '::')
+
+bt_navigator:
+  ros__parameters:
+    global_frame: map            # 2026-05-30: odom->map RESTORE (standard Nav2/REP-105 + GPS waypoint-follower tutorial: global costmap in map, local in odom, goals in map). RTK FIXED via public NTRIP (MDOT CORS; allowed per IGVC ruling — own base stations forbidden, public caster OK) makes map stable + cm-accurate, so the 05-29 odom workaround (for UNAIDED-GPS drift/recession, commit 5e6f279) no longer applies. Verified 2026-05-30: map-frame goals home onto true waypoints at 0.2 m, no extrapolation errors. FALLBACK: if RTK is unavailable/forbidden, revert this + global_costmap + route_server to odom.
+    robot_base_frame: base_link
+    odom_topic: /odometry/filtered
+    bt_loop_duration: 10
+    default_server_timeout: 20
+    # BT XML path resolved at launch time via navigation.launch.py
+    default_nav_to_pose_bt_xml: "/home/dinosaur/IGVC/install/avros_bringup/share/avros_bringup/config/navigate_igvc_autonav_2026.xml"
+    default_nav_through_poses_bt_xml: "/home/dinosaur/IGVC/install/avros_bringup/share/avros_bringup/config/navigate_igvc_autonav_2026.xml"
+    goal_reached_tol: 3.0       # GoalReached BT condition tolerance (meters)
+    navigators: ["navigate_to_pose", "navigate_through_poses"]
+    navigate_to_pose:
+      plugin: "nav2_bt_navigator::NavigateToPoseNavigator"
+    navigate_through_poses:
+      plugin: "nav2_bt_navigator::NavigateThroughPosesNavigator"
+    # Humble requires explicit BT plugin list (Jazzy auto-discovers)
+    plugin_lib_names:
+      - nav2_compute_path_to_pose_action_bt_node    # for navigate_to_pose_simple_humble.xml (ComputePathToPose)
+      - nav2_compute_route_bt_node                  # for navigate_route_graph_humble.xml (ComputeRoute)
+      - nav2_follow_path_action_bt_node
+      - nav2_is_path_valid_condition_bt_node
+      - nav2_wait_action_bt_node
+      - nav2_clear_costmap_service_bt_node
+      - nav2_goal_updated_condition_bt_node
+      - nav2_globally_updated_goal_condition_bt_node
+      - nav2_rate_controller_bt_node
+      - nav2_recovery_node_bt_node
+      - nav2_pipeline_sequence_bt_node
+      - nav2_round_robin_node_bt_node
+      - nav2_goal_reached_condition_bt_node
+      - nav2_back_up_action_bt_node                 # for navigate_igvc_autonav_humble.xml (BackUp)
+      - nav2_drive_on_heading_bt_node        # for navigate_igvc_autonav_humble.xml (DriveOnHeading)
+
+controller_server:
+  ros__parameters:
+    controller_frequency: 20.0
+    min_x_velocity_threshold: 0.01
+    min_y_velocity_threshold: 0.0
+    min_theta_velocity_threshold: 0.01
+    progress_checker_plugin: "progress_checker"   # Humble: singular string (not list)
+    goal_checker_plugins: ["general_goal_checker"]
+    controller_plugins: ["FollowPath"]
+    failure_tolerance: 0.5    # IGVC-AUTONAV 2026-06-01: re-sample ~10 cycles before BT abort
+
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      required_movement_radius: 0.3
+      movement_time_allowance: 12.0    # IGVC-AUTONAV 2026-06-01: trip recovery on true stall well under 60s DQ
+
+    general_goal_checker:
+      plugin: "nav2_controller::SimpleGoalChecker"
+      xy_goal_tolerance: 0.5     # 2026-05-30 (PM): 0.2->0.5 — the robot reliably PARKS ~0.45 m short of GPS waypoints (MPPI decel/grass-stiction + GoalAngleCritic yaw-fidget). Bag maxspeed_north: drove to 0.45 m in 33 s, then sat 88 s with cmd_vx~0 (never closed the last 0.25 m), until a re-send nudged it. 0.5 m lets the goal FIRE where the robot actually stops. IGVC waypoint tolerance is meters, so 0.5 m is fine.
+      yaw_goal_tolerance: 3.15   # 2026-05-30 (PM): 0.5->3.15 (>pi = "don't care") — GPS waypoint nav needs no final heading. The 0.5 rad gate made MPPI fidget rotationally near the goal (GoalAngleCritic) instead of finishing on position -> 88 s parking deadlock (bag maxspeed_north). Position-only completion.
+      stateful: true
+
+    # MPPIController — sampling-based MPC. Replaces RPP per Macenski's
+    # explicit recommendation for diff-drive that needs to maneuver around
+    # obstacles (RPP only follows; MPPI generates trajectories around).
+    # Numerics adopted verbatim from Clearpath A300/J100/W200 production
+    # configs — the universal "out-of-the-box" diff-drive tune.
+    FollowPath:
+      plugin: "nav2_mppi_controller::MPPIController"
+      time_steps: 56          # 2026-05-30: 25->56 RESTORE to the 2026-05-21 working horizon (RCA: docs/obstacle_stall_rca_2026_05_30.md). 25 (=1.25s/~0.9m) was too short to commit to a detour before creeping into the inflated halo; 56 (=2.8s/~2m) gives the reach. RE-VERIFY ros2 topic hz /cmd_vel >=18 under field load (cost ~ batch x time_steps). [prior:] 2026-05-28 PM: 56->25.  A 2026-05-29 Phase-0 bump to 40
+                              # was REVERTED: it rested on a FALSE "identical compute"
+                              # premise. MPPI cost ~ batch_size x time_steps x iters;
+                              # model_dt does NOT reduce per-step cost. So 25->40 added
+                              # ~60% optimizer compute and (with the full ZED+perception
+                              # stack + bag) dropped cmd_vel to 3.8 Hz with 576 ms gaps ->
+                              # actuator timeout -> chassis wandered/stuttered. See
+                              # docs/phase0_field_test_2026_05_29.md Test B.
+      model_dt: 0.05          # 2026-05-29: reverted 0.10->0.05 to the validated config.
+                              # The genuinely-free horizon lever is model_dt ALONE
+                              # (25 steps x 0.10 dt = 2.5 s horizon at SAME compute as
+                              # 25 x 0.05); revisit as its own isolated, tested change.
+      batch_size: 500         # 2026-05-28 PM: 1000->500. Combined with time_steps=25
+                              # gives ~6x speedup so MPPI doesn't pause for seconds
+                              # to recompute. Was 1000 (5/21 retune from 2000).
+      vx_std: 0.3             # 2026-05-30 (PM v2): 0.2->0.3. Source-verified the 0.2 revert was the WRONG direction: vx_std was MASKED while prune_distance=1.7 pinned the carrot (no exploration can buy speed past a closed gate — that is why 0.4 "barely moved it / added jitter"). Now prune=5.0 opens the ceiling to 5/2.8=1.79 > vx_max, so vx_std is the exploration that lets MPPI sample UP toward vx_max=1.5 from the ~0.6 prior. 0.3 (not 0.4) to limit jitter; raise to 0.4 if cruise still lags vx_max. Configure-time -> needs restart.
+      vy_std: 0.2
+      wz_std: 0.5             # IGVC-AUTONAV 2026-06-01: sample committed go-around yaw arcs
+      # vx_max/vx_min: matches the firmware ceiling on grass per
+      # docs/F_firmware_characterization_report.md (2026-05-12). SparkMAX
+      # kOutputMax_0 ≈ 0.47 caps the wheel duty → ~0.70 m/s achievable
+      # regardless of /cmd_vel. MPPI samples rollouts up to vx_max; setting
+      # this higher than what the motors can deliver causes rollout trajectories
+      # MPPI believes-in-but-cannot-execute, which hurts tracking.
+      # Raise to 1.5 after bench-fixing kOutputMax via REV Hardware Client.
+      vx_max: 0.7             # IGVC-AUTONAV 2026-06-01: KEEP the field-VALIDATED Jetson-live 0.7 m/s (1.57 mph), NOT the laptop-committed 1.5 (which was never deployed — reverted to 0.7 uncommitted). 0.7 still clears the IGVC 1 mph (0.447 m/s) average DQ floor with the freeze fixed, and the freeze fix is the real win; do NOT chase top-speed score until an asphalt speed test validates higher. vx_min stays -0.6. prune_distance 5.0 >> reach@0.7 (0.7*2.8=1.96 m) so cruise is NOT prune-pinned. To go faster post-validation: raise here (configure-time -> restart). Chassis can deliver ~1.5 (measured ~1.69) on better traction; accel ramp-limited by actuator 0.3 m/s² brown-out cap regardless.
+      vx_min: 0.0             # 2026-06-01: -0.6->0.0 — FORBID cruise reverse. The robot drove straight BACKWARD ~10 s toward a behind-goal; PreferForwardCritic (weight 5) alone did NOT prevent it, so this is a hard forward-only cruise limit. Stuck-backout is still available via the recovery BackUp behavior (0.25 m last-resort, separate from cruise). Does NOT stop an in-place turn-around to a behind-goal — keep waypoints AHEAD (place robot facing down-course).
+      vy_max: 0.5             # not used on diff-drive but required field
+      # wz_max: actuator clamps angular at max_angular_rps=1.5 (raised from
+      # 1.0 on 2026-05-12); grass slip caps achievable ω at ~0.7 rad/s peak.
+      # Keeping wz_max high here lets MPPI sample full range — actuator
+      # will clamp downstream.
+      wz_max: 1.9             # rad/s
+      # Acceleration limits (2026-05-19): matched to actuator_params.yaml slew
+      # caps so MPPI samples trajectories the chassis can actually deliver.
+      # Mismatch (defaults are 3.0/3.5) causes MPPI to plan accels reality
+      # can't follow → lateral path error grows as chassis lags predictions.
+      # Values are slightly above chassis caps to give MPPI sampling room
+      # without producing trajectories MPPI believes-in-but-cannot-execute.
+      # Chassis caps (actuator_params.yaml):
+      #   max_linear_accel_mps2:   0.3   -> ax_max  = 0.4  (1.33x)
+      #   max_linear_decel_mps2:   1.3   -> ax_min  = -1.5 (1.15x — safety dodge room)
+      #   max_angular_accel_rps2:  1.2   -> az_max  = 1.5  (1.25x)
+      # ay_max irrelevant for DiffDrive motion_model (no lateral motion).
+      ax_max: 0.4             # IGVC-AUTONAV 2026-06-01: KEPT at 0.4 (workflow proposed 0.8 for #5465 accel-asymmetry; REVERTED). Actuator hard-caps real accel at 0.3 m/s² (12V brown-out), velocity_smoother is inert (publishes /cmd_vel_smoothed, unconsumed), so 0.8 would send MPPI undeliverable accels straight to the actuator -> the exact "believes-in-but-cannot-execute" tracking lag the block above warns of. The freeze is a cost-gradient problem, not accel-limited. Revisit (paired ax_min + actuator cap raise) only after the 12V rail fix.
+      ax_min: -1.5
+      ay_max: 3.0             # unused for diff-drive; keep at default
+      az_max: 1.5
+      iteration_count: 1
+      prune_distance: 5.0     # 2026-05-30 (PM): 1.7->5.0 — THE cruise-speed fix (Nav2 issue #4970 + MPPI docs). MPPI cruised at exactly prune_distance/horizon = 1.7/(56*0.05) = 0.6 m/s because the path was pruned to only 1.7 m ahead -> no reason to go faster. 5.0 m > reach@vx_max (1.5*2.8=4.2 m) so MPPI can now demand full speed. Local costmap is 50 m, easily contains it.
+      transform_tolerance: 0.1
+      temperature: 0.25       # IGVC-AUTONAV 2026-06-01: sharpen commitment to cheapest go-around
+      gamma: 0.015
+      motion_model: "DiffDrive"
+      visualize: false
+      regenerate_noises: false
+      TrajectoryVisualizer:
+        trajectory_step: 5
+        time_step: 3
+      AckermannConstraints:
+        min_turning_r: 0.2
+      critics: ["ConstraintCritic", "CostCritic", "GoalCritic", "GoalAngleCritic", "PathAlignCritic", "PathFollowCritic", "PathAngleCritic", "PreferForwardCritic"]
+      ConstraintCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 4.0
+      GoalCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+        threshold_to_consider: 1.4
+      GoalAngleCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 3.0
+        threshold_to_consider: 0.5
+      PreferForwardCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+        threshold_to_consider: 0.5
+      CostCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0             # IGVC-AUTONAV 2026-06-01: ease centerline pull; inflation 0.85 supplies gradient. [prior 6.0:] 2026-05-28 PM: 3.81 -> 6.0 to strengthen centerline pull with reduced inflation. Lanes are LETHAL; this gradient pulls MPPI samples toward corridor center.
+        critical_cost: 300.0        # 2026-05-12: REVERTED to canonical default after multi-agent research. critical_cost is a penalty MAGNITUDE added when pose_cost >= INSCRIBED_INFLATED_OBSTACLE (253), not a threshold.
+        consider_footprint: true     # 2026-05-12: sweep robot_radius along trajectory — center-only checking was letting MPPI drive over thin painted lanes
+        collision_cost: 1000000.0
+        near_goal_distance: 1.0
+        trajectory_point_step: 2
+      PathAlignCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 12.0            # IGVC-AUTONAV 2026-06-01: loosen path-staple to aid go-around. [prior 16.0:] 2026-05-30 (PM v3): 8.0 -> 16.0 RAISE. Bag mid_inflation07 plot proved MPPI ignored a near-direct planned route (14.9 m) and drove a 30 m loop (5 m lateral deviation) — it wandered off the plan in the cluttered/inflated field. Was lowered 14->8 on 05-28 "to loosen commitment to the path"; that loosening is what let it wander. 16 makes MPPI track the global path tightly (keep toward goal) instead of looping around every halo. Tune down if it gets too rigid to dodge a real obstacle.
+        max_path_occupancy_ratio: 0.15  # 2026-05-28 PM: 0.05 -> 0.15 to allow global path to be partially obstructed without invalidating.
+        trajectory_point_step: 4
+        threshold_to_consider: 0.5
+        offset_from_furthest: 20
+        use_path_orientations: false
+      PathFollowCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 8.0             # 2026-05-30 (PM v2): restored 5.0->8.0. The 8->5 revert was only harmless WHILE prune=1.7 saturated the carrot. With prune=5.0 the carrot now LEADS the rollout fleet (path_follow_critic.cpp: offseted_idx = min(furthest_reached + offset_from_furthest, path_size)), so weight reactivates: cost = weight*dist(traj_end, carrot) -> higher weight rewards the FASTER samples that reach the distant carrot (header docstring confirms "higher weight + offset>1 accelerates samples to full speed"). Raise incrementally; too high -> jerky motion (ROS Answers Q414931).
+        offset_from_furthest: 5
+        threshold_to_consider: 1.4
+      PathAngleCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 2.0
+        offset_from_furthest: 4
+        threshold_to_consider: 0.5
+        max_angle_to_furthest: 1.2
+        forward_preference: true    # IGVC-AUTONAV 2026-06-01: real Humble knob (mode is Iron+ dead-config)
+
+planner_server:
+  ros__parameters:
+    expected_planner_frequency: 5.0   # 2026-05-28 PM: 2.0 -> 5.0 so global path refreshes faster as costmap updates with new lane/obstacle detections.
+    planner_plugins: ["GridBased"]
+
+    # NavfnPlanner (Dijkstra) — adopted as the diff-drive default per
+    # Clearpath Husky/Jackal/Warthog, Macenski's docs, and the IGVC team
+    # consensus. SmacPlannerHybrid was the wrong tool: it's documented
+    # for car-like/Ackermann/legged platforms, and DUBIN with 2.31 m
+    # min_turning_radius prevented the planner from fitting paths
+    # between visible lane lines (which are only 2-3 m apart at the
+    # IGVC course).
+    GridBased:
+      plugin: "nav2_navfn_planner/NavfnPlanner"
+      tolerance: 0.5
+      use_astar: false        # Dijkstra (Clearpath default); A* if you want speed at cost of optimality
+      allow_unknown: true
+
+behavior_server:
+  ros__parameters:
+    local_costmap_topic: local_costmap/costmap_raw
+    global_costmap_topic: global_costmap/costmap_raw
+    local_footprint_topic: local_costmap/published_footprint
+    global_footprint_topic: global_costmap/published_footprint
+    cycle_frequency: 10.0
+    behavior_plugins: ["backup", "drive_on_heading", "wait"]
+    # 2026-05-12: added accel/decel limits to backup + drive_on_heading.
+    # Without them, the behaviors emit "no acceleration or deceleration limits set"
+    # and Aborting handle instantly. Limits matched to actuator_node slew caps.
+    backup:
+      plugin: "nav2_behaviors/BackUp"               # Humble: '/' (has name= in plugin.xml)
+      acceleration_limit: 1.5      # m/s^2 — matches actuator_node max_linear_decel
+      deceleration_limit: -1.5     # m/s^2
+      minimum_speed: 0.05          # m/s — below this the behavior reports success
+    drive_on_heading:
+      plugin: "nav2_behaviors/DriveOnHeading"        # Humble: '/'
+      acceleration_limit: 1.0      # m/s^2 — matches actuator_node max_linear_accel
+      deceleration_limit: -1.0     # m/s^2
+      minimum_speed: 0.05          # m/s
+    wait:
+      plugin: "nav2_behaviors/Wait"                  # Humble: '/'
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      update_frequency: 10.0
+      publish_frequency: 10.0
+      always_send_full_costmap: true
+      global_frame: odom
+      robot_base_frame: base_link
+      # 2026-05-29 (Phase 0, Issue #18): was absent -> Nav2 default 0.3 s. The
+      # ZED cloud header.stamp lags wall-clock ~0.3-0.4 s, so exact-stamp TF
+      # lookups in the kiwicampus semantic_segmentation_layer intermittently
+      # fall outside 0.3 s and the layer drops the frame ("TF Exception").
+      # The layer reads transform_tolerance from THIS costmap node's namespace
+      # (semantic_segmentation_layer.cpp:85), not the controller's. 0.5 s
+      # absorbs the lag with 0.1 s margin. Structural fix (TimePointZero
+      # fallback in segmentation_buffer.cpp) is Phase 2 of nav2_cohort_strategy.
+      transform_tolerance: 0.5
+      rolling_window: true
+      width: 50
+      height: 50
+      resolution: 0.2
+      # 2026-05-29: CIRCULAR footprint, r=0.914 m. IMU (=base_link, x=0/y=0) to furthest vehicle
+      # point measured at 0.914 m. The prior rectangle ([±0.5,±0.37], circumscribed only 0.622 m)
+      # UNDER-sized the robot by ~0.3 m, so MPPI's footprint-collision check let corners clip the
+      # barrel. NOTE: MPPI CostCritic.consider_footprint=true requires an EXPLICIT footprint polygon
+      # — an empty footprint + robot_radius throws "no robot footprint provided in the costmap" and
+      # ABORTS bringup. So we give an explicit 16-pt circle (r=0.914). The tracked robot rotates in
+      # place, so the circumscribed circle is its true swept shape. See docs/lidar_rotation_phantom_fix_plan_2026_05_29.md.
+      robot_radius: 0.914
+      footprint: "[[0.8128,0.415],[0.8128,-0.415],[-0.2794,-0.415],[-0.2794,0.415]]"   # 2026-05-30: r=0.914 circle -> MEASURED chassis rectangle (base_link=IMU: front +0.8128 (32"), rear -0.2794 (11"), full width 0.83). The oversized circle (inscribed 0.896 ~= inflation) collapsed the MPPI gradient to a ~0.1m cliff + boxed escapes -> freeze (RCA docs/obstacle_stall_rca_2026_05_30.md; bag counterfactual at the freeze pose: rect 45 vs circle 19 collision-free fwd rollouts). Rect inscribed=0.2794m -> real gradient at inflation 1.0(local)/0.65(global) AND clears the global inflation<inscribed ERROR. Covers the real tracks (no clipping). robot_radius above is now IGNORED (footprint polygon takes precedence).
+      # stvl_layer first so obstacle_layer's LETHAL (road/grass) writes win on cell conflict via updateWithMax.
+      # STVL (spatio_temporal_voxel_layer) replaces nav2_costmap_2d::VoxelLayer
+      # for the Velodyne VLP-16 source. voxel_layer is structurally wrong for
+      # sparse 3D LiDAR + stationary-prone robot: it clears cells only via
+      # raytrace from sensor through the cell to a free-space endpoint, but
+      # VLP-16's 16-beam 2 deg ring spacing leaves wide angular gaps unswept
+      # per scan; when stationary that gap pattern is frozen, and any cell
+      # with no return beyond it (barrel removed -> laser sees sky) cannot
+      # be cleared by raytrace. inf_is_valid is hard-coded to LaserScan in
+      # nav2 humble (obstacle_layer.cpp:194-197 logs "not applicable to
+      # PointCloud observations"). STVL clears via voxel_decay (time) and
+      # decay_acceleration (frustum), which works on a stationary robot.
+      # Recommended by Steve Macenski (nav2 maintainer) for VLP-16; used by
+      # his vlp16_config.yaml, OmniLRS, and Jackal-UAO. Migrated 2026-05-13.
+      plugins: ["stvl_layer", "obstacle_layer", "inflation_layer"]
+
+      stvl_layer:
+        plugin: "spatio_temporal_voxel_layer/SpatioTemporalVoxelLayer"
+        enabled: true
+        voxel_decay: 3.0           # 2026-05-30: 8.0->3.0. The 8.0 was an anti-flicker band-aid; flicker is now root-fixed at the sensor (broadcast->unicast), so faster out-of-view clearing is safe. (Was anti-flicker: sparse)
+                                   # VLP-16 + CPU-load bursts decayed obstacles out
+                                   # (~40% of lethal cells lost while stationary).
+                                   # Long timeout = persistence; odom frame has no
+                                   # GPS smear to cap. See docs/lidar_obstacle_avoidance_test_2026_05_21.md
+        decay_model: 0             # 0=linear, 1=exponential, -1=persistent
+        voxel_size: 0.1            # 10 cm voxels
+        publish_voxel_map: true    # /.../stvl_layer/voxel_marked_cloud + voxel_grid
+        mark_threshold: 1            # 2026-05-29: 0->1. Needs >=2 returns/voxel to mark; kills single-hit scan-skew ghosts (A/B on bag: rotation far-ring excess +49%->+11%) AND flicker, with no decay tradeoff.
+        update_footprint_enabled: true
+        combination_method: 1      # Max (matches voxel_layer default)
+        mapping_mode: false        # ephemeral local costmap (not building a map)
+        observation_sources: velodyne_points
+        velodyne_points:
+          topic: /velodyne_points
+          sensor_frame: "velodyne"   # 2026-05-31: pin STVL clearing/frustum origin to the robot (velodyne) regardless of cloud header.frame_id. Default ("") would fall back to the cloud frame; with deskew re-enabled this insures clearing stays robot-centric even if the cloud comes out in odom. measurement_buffer.cpp:97-98 (origin_frame = sensor_frame ?: cloud.header.frame_id).
+          data_type: PointCloud2
+          marking: true
+          clearing: true
+          # min_obstacle_height is in the GLOBAL frame (odom for local_costmap),
+          # NOT the sensor frame -- confirmed in nav2_costmap_2d Humble source:
+          # ObservationBuffer::bufferCloud transforms cloud to global_frame_
+          # BEFORE the z check (lines 159-187 in observation_buffer.cpp).
+          # So 0 = ground level, positive = above ground, negative = below.
+          #
+          # 2026-05-13 V3 field tuning at CPP grass with the misinterpretation
+          # corrected: 0.2 filters under-ground multipath (~31% of returns) +
+          # ground hits + low grass while still marking short barrels (0.5+ m)
+          # and people (1+ m). Measured z-distribution at this site:
+          #   z<0     : 31% multipath/below-ground
+          #   0-0.2   : 18% ground + low grass
+          #   0.2-0.5 : 5%  tall grass / curbs
+          #   0.5-1   : 2%  barrels + at-sensor
+          #   1-2     : 8%  people / posts
+          #   >2      : 35% buildings / trees / high structures
+          # Set to 0.3 if grass is taller than 0.2 m at the test site.
+          min_obstacle_height: 0.4   # 2026-05-29: 0.2->0.4. Tight barrel mid-band [0.4,0.8]; filters ground/low returns.
+          max_obstacle_height: 1.0   # IGVC-AUTONAV 2026-06-01: mark full ~0.9m drum body. [prior 0.8:] 2026-05-29: ->0.8. Tight barrel mid-band [0.4,0.8]; fewer points (faster) + fewer phantoms.
+          obstacle_range: 8.0            # 2026-05-29: 15->8. Local avoidance only needs ~8 m; cuts the 9-15 m scan-skew far-ring + processes fewer points.
+          # VLP-16 hourglass FOV for frustum-accelerated decay
+          model_type: 1                  # 1 = 3D LiDAR; 0 = depth camera
+          vertical_fov_angle: 0.523      # VLP-16 +/-15 deg
+          # 2026-05-19: widen the near cone so close LOW voxels register as
+          # in-frustum -> get fast frustum-accelerated decay instead of the
+          # slow 5s timeout (was the near-front smear cause).
+          vertical_fov_padding: 0.1
+          horizontal_fov_angle: 6.283    # 360 deg
+          # decay_acceleration: accelerate decay of in-frustum voxels that get
+          # no confirming return (units 1/s^2). 2026-05-21: 10.0->5.0 — at 10 it
+          # was the DOMINANT clearing path for sparse VLP-16 (not voxel_decay)
+          # and drove the stationary flicker; lower = lean on the timeout instead.
+          # 2026-05-27: 5.0->2.0 — visible flicker still present at 5.0 (voxel in
+          # FOV but un-reconfirmed this rotation decayed too fast for VLP-16's
+          # 16-beam sparsity). At accel=2, a voxel missed for 2s decays only
+          # ~2.67s instead of ~6.67s, giving more cycles for re-confirmation.
+          decay_acceleration: 0.5    # IGVC-AUTONAV 2026-06-01: adopt Jetson-LIVE 0.5 (was laptop-committed 2.0). Slower frustum decay = barrels persist while the robot maneuvers AROUND them -> no corner-cut Sideswipe (II.4 -5 ft); still clears once truly gone via voxel_decay.
+          clear_after_reading: true
+
+      # 2026-08-12: swapped semantic_segmentation_layer (avros_perception,
+      # lane-only -- built for the IGVC competition course where grass IS the
+      # driving surface and only painted lines are lethal) for the road-aware
+      # perception_costmap pipeline (HSV road segmentation, offroad_cost=97
+      # treats grass/curb/off-road as near-lethal -- see perception_dinosaur.yaml).
+      # perception_costmap publishes a complete, already-fused OccupancyGrid on
+      # /perception/costmap, not a per-camera segmentation topic, so it can't
+      # plug into SemanticSegmentationLayer directly. costmap_to_cloud.py
+      # (already built + documented in
+      # carla-nav2-avl/ros2_ws/src/perception_costmap/deploy/) ray-casts it
+      # into a base_link-frame PointCloud2 on /perception/costmap_cloud, which
+      # a standard ObstacleLayer consumes -- avoids the axis-alignment
+      # problems that killed two earlier StaticLayer attempts (see that
+      # script's docstring for the full history). OBST_THRESH=97 in the
+      # converter already matches offroad_cost:97, no config drift.
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        # The source grid expands confirmed objects before this bridge:
+        # person 1.2 m, vehicle 0.6 m, generic 0.5 m, cone 0.2 m are LETHAL.
+        # Inflation below supplies chassis clearance and MPPI's smooth gradient
+        # around those zones. Raising both would double-count clearance and can
+        # close otherwise valid campus corridors.
+        observation_sources: costmap_cloud
+        costmap_cloud:
+          topic: /perception/costmap_cloud
+          data_type: "PointCloud2"
+          marking: true
+          clearing: true
+          min_obstacle_height: 0.1
+          max_obstacle_height: 2.5
+          obstacle_max_range: 15.5  # clearing endpoints are emitted at 16 m and are not marked
+          raytrace_max_range: 16.0
+
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 2.5     # 2026-05-30 (PM v2): 3.0->2.5 SOFTENED. Gentler exp decay so the cost ramps smoothly across the wider 0.7 m band instead of cliffing in the first ~0.2 m — gives MPPI CostCritic an earlier monotonic gradient to steer/slow on (Macenski "smooth inflation critical"). Pairs with inflation_radius 0.7.
+        inflation_radius: 1.0        # 2026-06-01 PM: 0.85->1.0 (user req: more lane/obstacle standoff). NOTE MPPI was failing to compute path before this; watch for tighter gap-boxing. [prior 0.85:] restore descendable V-basin; the freeze fix. The 0.12 m live band (0.4-0.2794) gave MPPI no early-steer gradient -> flat field -> softmax-collapse freeze. 0.85 (with csf 2.5) yields a monotonic basin in a 1.524 m gap, FREE at d=0.85, letting MPPI veer before the barrel; >= inscribed 0.2794 (no Nav2 error), < circumscribed 0.913. Collision band still governed by inscribed 0.2794 so the 5 ft gap edge-margin is unchanged. Chosen over thin-0.4 + collision_monitor (monitor still pending/unwired). [prior 0.4:] 2026-05-31 (v5): 0.6->0.4. Set inflation ~= robot HALF-WIDTH (0.415 m) so the PLANNER threads dense-field gaps ACCURATELY instead of detouring around (Navfn is a point-robot on the inflated map — it does NOT use the footprint, so inflation IS how it knows the robot's size; over-inflation 0.6-0.7 made it take the easy path around clutter). Body safety stays via MPPI consider_footprint=true (real polygon collision check); obstacle BRAKING/standoff to be handled by nav2_collision_monitor (pending), NOT by fat inflation. Tradeoff accepted: band 0.4-0.28=0.12 m = thin MPPI gradient (early-steer is weak) — that's why the monitor is needed for the slow-down. cost_scaling 2.5, PathAlign 16. Prior: 0.6/0.5/0.7/0.3, 1.0 was 05-21 barrel standoff.
+                                     # so MPPI gets a real early-avoidance gradient instead
+                                     # of cutting obstacles close. The old "1.0 boxed the
+                                     # robot in" concern was camera-lane + GPS-smear lethal
+                                     # blobs in the GLOBAL (map) costmap; this LOCAL costmap
+                                     # is odom frame with no smear source, so 1.0 is safe.
+                                     # Global inflation left at 0.65 (see below). History:
+                                     # 0.4 warned (< inscribed 0.794); 0.65 was the interim.
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      # 2026-05-19 (L6 fix): 10 Hz + STVL time-decay + 40 m rolling window to
+      # stop GPS-drift phantom accumulation. The plain ObstacleLayer had NO
+      # decay, so off-ray cells from ~8 cm/s map->odom drift piled up
+      # (measured 5878 -> 24567 lethal in a 40 s drive; local STVL cleared in
+      # ~1 s over the same test). STVL gives the global the same time-based
+      # decay the local already has; the 40 m window lets residual smear fall
+      # off the trailing edge. publish 2 Hz so RViz/consumers see fresh data.
+      update_frequency: 10.0
+      publish_frequency: 2.0
+      global_frame: map            # 2026-05-30: odom->map RESTORE (RTK FIXED). See bt_navigator note. local_costmap stays odom (robot-centric rolling).
+      robot_base_frame: base_link
+      rolling_window: true
+      width: 100   # 2026-05-28 PM: 40->100 m so waypoints up to ~50 m from chassis are reachable. NavfnPlanner can't compute a path to a goal outside its costmap.
+      height: 100  # 2026-05-28 PM: 40->100 m — see width comment.
+      resolution: 0.2
+      # 2026-05-29: CIRCULAR footprint, r=0.914 m. IMU (=base_link, x=0/y=0) to furthest vehicle
+      # point measured at 0.914 m. The prior rectangle ([±0.5,±0.37], circumscribed only 0.622 m)
+      # UNDER-sized the robot by ~0.3 m, so MPPI's footprint-collision check let corners clip the
+      # barrel. NOTE: MPPI CostCritic.consider_footprint=true requires an EXPLICIT footprint polygon
+      # — an empty footprint + robot_radius throws "no robot footprint provided in the costmap" and
+      # ABORTS bringup. So we give an explicit 16-pt circle (r=0.914). The tracked robot rotates in
+      # place, so the circumscribed circle is its true swept shape. See docs/lidar_rotation_phantom_fix_plan_2026_05_29.md.
+      robot_radius: 0.914
+      footprint: "[[0.8128,0.415],[0.8128,-0.415],[-0.2794,-0.415],[-0.2794,0.415]]"   # 2026-05-30: r=0.914 circle -> MEASURED chassis rectangle (base_link=IMU: front +0.8128 (32"), rear -0.2794 (11"), full width 0.83). The oversized circle (inscribed 0.896 ~= inflation) collapsed the MPPI gradient to a ~0.1m cliff + boxed escapes -> freeze (RCA docs/obstacle_stall_rca_2026_05_30.md; bag counterfactual at the freeze pose: rect 45 vs circle 19 collision-free fwd rollouts). Rect inscribed=0.2794m -> real gradient at inflation 1.0(local)/0.65(global) AND clears the global inflation<inscribed ERROR. Covers the real tracks (no clipping). robot_radius above is now IGNORED (footprint polygon takes precedence).
+      track_unknown_space: false
+      plugins: ["stvl_layer", "obstacle_layer", "inflation_layer"]
+
+      # 2026-05-19 (L6 fix): was nav2_costmap_2d::ObstacleLayer (raytrace-only,
+      # no decay). Swapped to STVL to mirror the local costmap's time-decay so
+      # GPS-drift phantoms evaporate instead of accumulating. obstacle_range 20 m
+      # fits the 40 m rolling window (±20 m). All other params mirror the
+      # local stvl_layer; see local_costmap.stvl_layer above for rationale.
+      stvl_layer:
+        plugin: "spatio_temporal_voxel_layer/SpatioTemporalVoxelLayer"
+        enabled: true
+        voxel_decay: 5.0           # 2026-05-21: 2.0->5.0. Modest bump only (NOT 8
+                                   # like local) — global is map frame, so a long
+                                   # decay smears GPS-drift phantoms; 5 balances
+                                   # obstacle persistence vs smear accumulation.
+        decay_model: 0             # 0=linear
+        voxel_size: 0.1
+        publish_voxel_map: false   # global; no need for voxel debug cloud
+        mark_threshold: 1            # 2026-05-29: 0->1. Needs >=2 returns/voxel to mark; kills single-hit scan-skew ghosts (A/B on bag: rotation far-ring excess +49%->+11%) AND flicker, with no decay tradeoff.
+        update_footprint_enabled: true
+        combination_method: 1
+        mapping_mode: false
+        observation_sources: velodyne_points
+        velodyne_points:
+          topic: /velodyne_points
+          sensor_frame: "velodyne"   # 2026-05-31: pin STVL clearing origin to the robot (velodyne); global_frame=map, so without this the origin would resolve to map-position of the cloud frame. measurement_buffer.cpp:97-98. See local source + velodyne.yaml deskew note.
+          data_type: PointCloud2
+          marking: true
+          clearing: true
+          min_obstacle_height: 0.4   # 2026-05-29: 0.2->0.4. Tight barrel mid-band [0.4,0.8]; filters ground/low returns.
+          max_obstacle_height: 0.8   # 2026-05-29: ->0.8. Tight barrel mid-band [0.4,0.8]; fewer points (faster) + fewer phantoms.
+          obstacle_range: 10.0           # 2026-05-29: 20->10. Faster; global only needs nearby obstacles for planning.
+          model_type: 1                  # 3D LiDAR (frustum-accelerated decay)
+          vertical_fov_angle: 0.523      # VLP-16 +/-15 deg
+          vertical_fov_padding: 0.1      # 2026-05-19: widen near cone (match local)
+          horizontal_fov_angle: 6.283    # 360 deg
+          decay_acceleration: 0.5       # IGVC-AUTONAV 2026-06-01: adopt Jetson-LIVE 0.5 (match local; barrel persistence while maneuvering). [prior 2.0:] 2026-05-21: 10->5; 2026-05-27: 5->2 (further anti-flicker, see local comment)
+          clear_after_reading: true
+
+      # 2026-08-12: mirror of local_costmap's obstacle_layer swap -- see that
+      # block's comment for the full rationale (semantic_segmentation_layer ->
+      # perception_costmap road/grass segmentation via costmap_to_cloud.py).
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        # Same semantic exclusion source as the local layer. Navfn plans around
+        # expanded lethal zones; campus_navigator skips an occupied intermediate
+        # anchor so a person cannot turn a rolling waypoint into a terminal goal.
+        observation_sources: costmap_cloud
+        costmap_cloud:
+          topic: /perception/costmap_cloud
+          data_type: "PointCloud2"
+          marking: true
+          clearing: true
+          min_obstacle_height: 0.1
+          max_obstacle_height: 2.5
+          obstacle_max_range: 15.5
+          raytrace_max_range: 16.0
+
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 2.5     # 2026-05-30 (PM v2): 3.0->2.5 SOFTENED. Gentler exp decay so the cost ramps smoothly across the wider 0.7 m band instead of cliffing in the first ~0.2 m — gives MPPI CostCritic an earlier monotonic gradient to steer/slow on (Macenski "smooth inflation critical"). Pairs with inflation_radius 0.7.
+        inflation_radius: 0.85       # 2026-06-01 PM: 0.65->0.85 (user req). NOTE global NOW has the semantic lane layer (persistence change), so the old "no boxing here" rationale no longer holds — more inflation widens lane keep-out; watch for corridor-boxing. [prior 0.65:] point-robot Navfn bows global path around barrels. Navfn ignores the footprint, so global inflation IS its only width model; the 0.12 m live band let it clip barrel halos and punt go-around to MPPI. 0.65 gives a 0.37 m graded basin (1.75 m corridor in a 10 ft lane) with margin before MPPI; >> inscribed 0.2794, < circumscribed 0.91. Kept < local 0.85 for the GPS-prone map frame (no semantic lane layer here, so no boxing). [prior 0.4:] 2026-05-31 (v5): 0.6->0.4 to match local (~robot half-width so the planner threads gaps; see local comment — body safety via footprint, braking via collision_monitor pending).
+                                     # detections accumulated into a lethal blob that boxed
+                                     # in the robot. 0.4 < inscribed_radius (0.794) so Nav2
+                                     # will warn; accepted trade-off until lane detection
+                                     # produces paired stripes the planner can corridor between.
+
+velocity_smoother:
+  ros__parameters:
+    smoothing_frequency: 20.0
+    scale_velocities: false
+    feedback: "OPEN_LOOP"
+    max_velocity: [1.5, 0.0, 1.5]       # [vx, vy, omega]  # IGVC-AUTONAV 2026-06-01: match actuator vx 1.5, uncap omega for crisp turns
+    min_velocity: [-0.6, 0.0, -1.5]     # IGVC-AUTONAV 2026-06-01: align reverse to MPPI vx_min + actuator omega
+    max_accel: [0.3, 0.0, 1.2]          # IGVC-AUTONAV 2026-06-01: sync to actuator accel caps (0.3 / 1.2)
+    max_decel: [-1.3, 0.0, -1.2]        # IGVC-AUTONAV 2026-06-01: sync to actuator decel caps (crisp 0.86m stop)
+    odom_topic: /odometry/filtered
+    odom_duration: 0.1
+    deadband_velocity: [0.0, 0.0, 0.0]
+    velocity_timeout: 1.0
+
+# Final deterministic safety filter below Nav2 and the velocity smoother.
+# The input point cloud already carries semantic exclusion: a person boundary
+# is farther from the detection than a vehicle/generic/cone boundary. This
+# monitor therefore reacts earlier to people without running another classifier
+# in the command path. A stale/missing cloud stops output (source_timeout).
+collision_monitor:
+  ros__parameters:
+    use_sim_time: false
+    base_frame_id: "base_link"
+    odom_frame_id: "odom"
+    cmd_vel_in_topic: "/cmd_vel_collision_in"
+    cmd_vel_out_topic: "/cmd_vel"
+    transform_tolerance: 0.3
+    source_timeout: 0.5
+    base_shift_correction: true
+    stop_pub_timeout: 1.0
+    polygons: ["StopZone", "ApproachZone"]
+    StopZone:
+      type: "polygon"
+      # Measured chassis footprint padded by ~0.17 m on every side.
+      points: [1.0, 0.58, 1.0, -0.58, -0.45, -0.58, -0.45, 0.58]
+      action_type: "stop"
+      max_points: 3
+      visualize: true
+      polygon_pub_topic: "/collision_monitor/stop_zone"
+      enabled: true
+    ApproachZone:
+      type: "polygon"
+      action_type: "approach"
+      footprint_topic: "/local_costmap/published_footprint"
+      time_before_collision: 2.0
+      simulation_time_step: 0.1
+      max_points: 3
+      visualize: true
+      polygon_pub_topic: "/collision_monitor/approach_zone"
+      enabled: true
+    observation_sources: ["semantic_cloud"]
+    semantic_cloud:
+      type: "pointcloud"
+      topic: "/perception/costmap_cloud"
+      min_height: 0.1
+      max_height: 0.6
+      enabled: true
+
+route_server:
+  ros__parameters:
+    base_frame: "base_link"
+    route_frame: "map"
+    global_frame: "map"            # 2026-05-30: odom->map RESTORE (consistency; route_server not in active humble BT). See bt_navigator note.
+    max_planning_time: 2.0
+    prune_route: true
+    path_density: 0.5
+    smooth_corners: false             # dense graph nodes follow road curves; smoothing can distort path
+    graph_filepath: "/home/dinosaur/IGVC/install/avros_bringup/share/avros_bringup/config/cpp_campus_graph.geojson"
+    graph_file_loader: "GeoJsonGraphFileLoader"
+    DistanceScorer:
+      plugin: "nav2_route::DistanceScorer"
+      weight: 1.0
+    GeoJsonGraphFileLoader:
+      plugin: "nav2_route::GeoJsonGraphFileLoader"
+    edge_cost_functions: ["DistanceScorer"]

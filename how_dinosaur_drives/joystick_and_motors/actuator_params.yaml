@@ -1,0 +1,129 @@
+# ============================================================================
+# avros_control actuator_node parameters
+#
+# Drives an AndyMark Raptor differential-track chassis. Subscribes /cmd_vel
+# and /avros/actuator_command, writes per-wheel RPM setpoints to the Teensy
+# 4.1 over USB serial; Teensy forwards to two SparkMAX motor controllers
+# over CAN at 1 Mbit/s. Publishes /wheel_odom (50 Hz) and
+# /avros/actuator_state (20 Hz).
+#
+# Runtime tunability — see actuator_node.py:_DYNAMIC_PARAMS:
+#   [DYNAMIC]   `ros2 param set /actuator_node <name> <value>` applies immediately
+#   [INIT-ONLY] requires `kill actuator_node && ros2 launch ...` to change
+#
+# Speed-cap context (issue #6, re-tuned 2026-05-14 on asphalt):
+#   The earlier "kOutputMax_0 ≈ 0.47 firmware cap" theory was DISPROVED --
+#   the ~70% RPM under-delivery was simply kP too small. With kP=0.0008 +
+#   kI=5e-7 + kIZone=600 the motors track ~100% of commanded RPM; the duty
+#   cycle is not clamped at 0.47. max_linear_mps below is the actuator's
+#   INTERNAL clamp; the motors can now reach it.
+# ============================================================================
+actuator_node:
+  ros__parameters:
+    # ---- Teensy serial [INIT-ONLY] ----
+    # 2026-05-29: stable by-id path instead of /dev/ttyACM0 (which renumbers to
+    # ttyACM1 on reconnect). Tied to this Teensy's serial 19915540.
+    serial_port: "/dev/serial/by-id/usb-Teensyduino_USB_Serial_19915540-if00"
+    serial_baud: 115200
+
+    # ---- Vehicle geometry [INIT-ONLY] ----
+    track_width_m: 0.7366          # 29 inches between track centerlines
+    m_per_motor_rev: 0.01994       # π × 80.85 mm / 12.75:1 gearbox
+
+    # ---- Speed safety caps [DYNAMIC] ----
+    max_linear_mps: 1.5            # achievable now (issue #6 re-tune) -- the
+                                   # old "kOutputMax caps at 0.70 m/s" was wrong
+    max_angular_rps: 1.5           # 2026-05-12: raised 1.0 -> 1.5 to give
+                                   # heading-hold room to compensate right-track
+                                   # friction asymmetry without saturating the
+                                   # angular command. Grass slip caps actual ω
+                                   # at ~0.7 rad/s peak regardless.
+
+    # ---- Slew-rate limits [DYNAMIC] ----
+    # Smooth velocity changes to protect the 12V rail (motor inrush causes
+    # Jetson brown-outs) and feel-of-motion. Time to reach max_linear_mps
+    # from 0 = max_linear_mps / max_linear_accel_mps2. Decel cap can be
+    # higher than accel cap for snappier stops.
+    #
+    # Softened 2026-05-19 for the 50-60 lb chassis — at this mass the prior
+    # values (0.5 / 1.5 / 1.0) felt aggressive on starts and lurched on stops
+    # because they fought the chassis momentum instead of working with it.
+    #
+    # Asymmetric on purpose: soft accel (gentle starts), brisk decel (crisp
+    # stops on joystick release). max_angular_accel_rps2 is currently used
+    # for BOTH angular accel AND decel — re-tune to a single middle value
+    # OR add separate max_angular_decel_rps2 (code change) if needed.
+    #
+    # Values (2026-05-19):
+    #   linear accel:  0 -> 1.5 m/s  in 5.0 s  (smooth start)
+    #   linear decel:  1.5 m/s -> 0  in 1.15 s, ~0.86 m stop dist
+    #   angular slew:  0 -> 1.5 rad/s in 1.25 s (both directions)
+    # Decel >> accel for safety. MPPI accel limits (nav2_params_humble.yaml
+    # ax_max/ax_min/az_max) are matched to these — keep in sync if changed.
+    max_linear_accel_mps2: 0.3
+    max_linear_decel_mps2: 1.3
+    max_angular_accel_rps2: 1.2
+
+    # ---- IMU-based straight-line assist [DYNAMIC] ----
+    heading_hold_deadband: 0.05    # rad/s — |ω_cmd| below this engages heading-hold
+    heading_kp: 1.5                # P gain on yaw error (rad/s output per rad error)
+
+    # ---- Skid-steer kinematic correction (Mandow ICR model) [DYNAMIC] ----
+    # Tracked chassis can't pure-roll when rotating; both tracks scrape
+    # sideways. Multiplier > 1 widens the effective wheel separation so the
+    # commanded-vs-actual ω gap closes. Same convention as
+    # ros2_controllers/diff_drive_controller. Reference values:
+    #   Husky:  1.875 (control.yaml in clearpath husky_control)
+    #   Jackal: 1.5
+    #   Ours:   1.19 (= 1/0.84 measured 2026-05-18 — open-loop ω delivered
+    #                  84% of commanded across 0.3-1.2 rad/s on a smooth
+    #                  surface; re-calibrate for grass before competition).
+    # Validated 2026-05-18: with multiplier=1.0, ω delivery 82-86%.
+    # With multiplier=1.19 (pre-scaled cmd in test), delivery 100-102%.
+    wheel_separation_multiplier: 1.19
+
+    # ---- Timing ----
+    cmd_timeout_s: 0.5             # [DYNAMIC] stop if no cmd_vel for this long
+    control_rate_hz: 50.0          # [INIT-ONLY] L/R RPM setpoint update rate
+    state_pub_rate_hz: 20.0        # [INIT-ONLY] /avros/actuator_state rate
+
+    # ---- SparkMAX PID gains [DYNAMIC], pushed to Teensy on startup AND
+    # whenever changed via `ros2 param set /actuator_node <gain> <value>`.
+    # The Teensy forwards each K-line to BOTH SparkMAXes via CAN
+    # PARAMETER_WRITE and acks with `OK K<P|I|D|F|Z>=<value>` in the
+    # actuator_node log so end-to-end push can be verified.
+    #
+    # Re-tuned 2026-05-18 after battery relocation (COM shifted). With the
+    # previous gains (kP=0.0008, kI=5e-7) the motors overshot commanded RPM
+    # by 14-16% at v=1.0 m/s and 23-27% at rot=0.5 rad/s -- visible as a
+    # "snap" at the end of every slew ramp. Root cause: kI integrator
+    # winding up during the long slew (max_linear_accel=0.5 m/s/s takes
+    # 2 s at v=1.0), then dumping the accumulated duty when the slew ends
+    # and lag closes. Halving kI (5e-7 -> 2.5e-7) slowed buildup; lowering
+    # kP slightly (0.0008 -> 0.0007) reduced the proportional kick. Result:
+    # linear overshoot down to 0-9%, rotation overshoot down to 8-14%,
+    # cumulative drift across a full fwd/rev/rot sweep down from +31.6 deg
+    # to -0.085 deg, steady-state delivery 93-96% (still good for Nav2's
+    # outer loop). Validated through bags pid_iter1..7_*. BURNed to flash
+    # via REV Hardware Client (Velocity PID slot 0) on both SparkMAXes.
+    # 2026-08-05: swapped to the AVL-IGVC2026/teensy_sparkmax_fw26_synced
+    # tuning-guide values per user request, in response to a motor burnout
+    # traced to uncapped current draw. NOTE: this alone does not cap current --
+    # see kSmartCurrentFreeLimit (SparkMAX param, default 20A, never explicitly
+    # set by firmware) flagged as the likely real root cause in
+    # firmware/teensy_diff_drive/FINDINGS.md. Not yet pushed live -- file only.
+    # 2026-08-10: the 0.0007/2.5e-7 values above moved the car but reintroduced
+    # a shake that FINDINGS.md documents as already solved -- Phase 6b/6c
+    # bench-tuned and BURNED these exact gains with real acceptance metrics
+    # (10.7% step overshoot settling in 338ms, 0.24-0.25% repeatability,
+    # 99-100% tracking 500-3000 RPM). Using the team's own validated values
+    # instead of re-guessing between shaky and dead.
+    kFF: 0.000197
+    kP:  0.0004
+    kI:  0.0000009
+    kD:  0.0
+    kIZone: 600.0
+
+    # ---- Odometry frames [INIT-ONLY] ----
+    odom_frame: "odom"
+    base_frame: "base_link"

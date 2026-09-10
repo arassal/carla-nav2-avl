@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>AVROS Console</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            touch-action: none;
+            user-select: none;
+        }
+        #estop {
+            background: #d32f2f;
+            color: #fff;
+            font-size: 24px;
+            font-weight: bold;
+            padding: 20px;
+            border: none;
+            width: 100%;
+            cursor: pointer;
+        }
+        #estop.active { background: #b71c1c; }
+        #controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 15px;
+            background: #2a2a2a;
+        }
+        .modes { display: flex; gap: 8px; }
+        .modes button {
+            background: #444;
+            color: #fff;
+            border: none;
+            padding: 10px 18px;
+            font-size: 16px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .modes button.active { background: #1976d2; }
+        #autobtn {
+            background: #444;
+            color: #fff;
+            border: none;
+            padding: 10px 18px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        /* amber when autonomous — mirrors the physical §I.2 safety light */
+        #autobtn.active { background: #ff8c00; color: #000; }
+        #status {
+            font-size: 14px;
+            color: #4caf50;
+        }
+        #status.disconnected { color: #f44336; }
+        #values {
+            text-align: center;
+            padding: 15px;
+            font-family: monospace;
+            font-size: 16px;
+            background: #222;
+        }
+        #joystick-zone {
+            flex: 1;
+            background: #111;
+            position: relative;
+        }
+    </style>
+</head>
+<body>
+    <button id="estop">E-STOP</button>
+
+    <div id="controls">
+        <div class="modes">
+            <button data-mode="N">N</button>
+            <button data-mode="D" class="active">D</button>
+            <button data-mode="S">S</button>
+            <button data-mode="R">R</button>
+        </div>
+        <button id="autobtn">AUTO</button>
+        <div id="status">Connecting...</div>
+    </div>
+
+    <div id="values">T: 0.00 | S: 0.00 | B: 0.00</div>
+
+    <div id="joystick-zone"></div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+# Velodyne VLP-16 configuration
+# Package: ros-humble-velodyne (apt install)
+# Sensor reconfigured to 192.168.13.11 (same subnet as Jetson)
+
+velodyne_driver_node:
+  ros__parameters:
+    device_ip: "192.168.13.11"     # Reconfigured from factory 192.168.1.201
+    port: 2368                     # Factory default data port
+    model: "VLP16"
+    rpm: 600.0
+    frame_id: "velodyne"
+    gps_time: false
+    time_offset: 0.0
+    cut_angle: 6.283185307     # 2026-05-29: full-revolution azimuth cut (2pi). Sensor double-broadcasts packets (1508/s) so default fixed npackets=76 = HALF rev @20Hz -> alternating-half clouds + precession beat starved one hemisphere every ~6s -> STVL frustum cleared it -> costmap flicker. Azimuth-cut assembles ONE true 360 rev @~10Hz, duplication-immune.
+
+velodyne_transform_node:
+  ros__parameters:
+    model: "VLP16"
+    min_range: 0.7                 # 2026-05-19: 1.0->0.7. Lowered to see closer
+                                   # obstacles for near-zone clearing, but 0.4
+                                   # self-detected a robot mount/payload at
+                                   # 0.4-0.6m / ~0.6m height (verified: 45 phantom
+                                   # lethal cells). 0.7 clears that structure
+                                   # while still seeing 30cm closer than 1.0.
+    max_range: 50.0
+    calibration: "/opt/ros/humble/share/velodyne_pointcloud/params/VLP16db.yaml"
+    organize_cloud: true
+    fixed_frame: "velodyne"        # 2026-05-31: DESKEW ON, written SWAP-AWARE. Upstream velodyne_transform configure() swaps fixed/target args (transform.cpp:138 calls configure(...,target_frame,fixed_frame) into signature (...,fixed_frame,target_frame); confirmed present on the ros2-branch HEAD = the Humble source, NOT fixed by issue #484). So these values are INTENTIONALLY "backwards": at runtime config_.fixed_frame=odom (per-packet ego-motion deskew via computeTransformToFixed) + config_.target_frame=velodyne (assembled cloud re-projected back to the sensor frame at scan stamp). NET: deskew ON, output frame_id stays "velodyne" -> STVL clears robot-centric, NO costmap frame change required. Replaces the 05-30 "DESKEW OFF" workaround (that fixed_frame:"odom" never actually deskewed -- the swap routed it to a per-scan transform-to-odom; see docs/deskew_sensorframe_verification_2026_05_30.md).
+    target_frame: "odom"           # see fixed_frame note. VERIFY on first Jetson launch: `ros2 topic echo --once /velodyne_points --field header.frame_id` MUST print "velodyne". If it prints "odom", the installed apt binary lacks the swap -> flip to fixed_frame:"odom" + target_frame:"velodyne". Belt+suspenders: both STVL velodyne_points sources also set sensor_frame:"velodyne", so clearing stays robot-centric even if the frame comes out wrong.
