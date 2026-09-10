@@ -315,6 +315,13 @@ Present locally, correctly gitignored, not tracked. Noted only so nobody
   `test_costmap_cloud.py`), and `deploy/costmap_to_cloud.py` runs, consuming a
   synthetic costmap and publishing `/perception/costmap_cloud` at 10 Hz.
 - Every relative import in `driving_seg/driving_seg/` resolves.
+- **The campus map is fine — it is not the cause of the click rejection.**
+  `graph_validation.py` on `cpp_campus_graph.geojson`: 9112 nodes, 17492
+  edges, one weak component (nothing stranded), 9082 nodes in the
+  bidirectionally routable core, 20/20 route probes succeeded over 25.1 km.
+  **PASS.** One warning worth knowing: 30 nodes sit outside the routable core
+  (one-way fringe), so a destination clicked right on one of those could still
+  fail to route — unrelated to B2.
 
 Not yet attempted here: `colcon build` (this box is ROS 2 **Jazzy**, the
 project targets **Humble**), CARLA smoke test, anything on the Jetson.
