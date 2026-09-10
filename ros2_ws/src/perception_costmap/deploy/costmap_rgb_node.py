@@ -5,10 +5,13 @@ RViz's Map display only ships fixed colour schemes, none of which say what we
 want, so we publish the grid as an RGB PointCloud2 (Style: Boxes, one cell
 each) and own the palette:
 
-    charcoal  unknown -- never observed
+    dim green/yellow/red   guessed -- infilled from the surrounding
+                            observed ground, same hue as a real
+                            observation but dimmed to ~40% brightness
     green     free / low cost
     yellow    medium cost
     red       high cost / lethal
+    near-black              true ROS unknown (not emitted by this stack)
 
 WHY WE SUBSCRIBE TO /perception/known:
 perception_dinosaur.yaml sets `unknown_cost: 25`, so unobserved cells are
@@ -43,9 +46,7 @@ RAMP = np.array([
     (100, 255,   0,   0),    # lethal      -> red
 ], dtype=np.float32)
 
-UNKNOWN_DARK_RGB = (31, 35, 41)
-UNKNOWN_LIGHT_RGB = (42, 47, 54)
-ROS_UNKNOWN_RGB = (12, 14, 18)
+ROS_UNKNOWN_RGB = (12, 14, 18)   # near-black -- true ROS unknown, grid < 0
 
 
 def build_lut():
@@ -104,14 +105,12 @@ class CostmapRGB(Node):
 
         grid = np.array(msg.data, np.int16).reshape(h, w)
         rgb = self.lut[np.clip(grid, 0, 100).astype(np.uint8)]
-        # Navigation may assign a numeric prior to unseen cells, but the
-        # operator display must not make guessed space look observed. Render a
-        # coarse neutral checker pattern that remains legible when zoomed out.
+        # Blind cells carry an infilled GUESS (see occupancy.infill_unknown),
+        # so render them in the guessed colour but dimmed to ~40% -- visibly
+        # "we think this, but nothing has seen it". grid < 0 (true ROS
+        # unknown, not emitted by this stack) stays near-black.
         guessed = ~self.known
-        rows, cols = np.indices((h, w))
-        checker = ((rows // 5 + cols // 5) % 2).astype(bool)
-        rgb[guessed & ~checker] = UNKNOWN_DARK_RGB
-        rgb[guessed & checker] = UNKNOWN_LIGHT_RGB
+        rgb[guessed] = (rgb[guessed].astype(np.float32) * 0.4).astype(np.uint8)
         rgb[grid < 0] = ROS_UNKNOWN_RGB
 
         key = (h, w, msg.info.resolution,
