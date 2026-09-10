@@ -183,7 +183,7 @@ bottleneck keeping the car at ~5 Hz (below the 8 Hz acceptance bar), and
 disagree on channel order, that export will change accuracy as well as speed,
 and the change will look like a TensorRT problem.
 
-### C3 — `real_nav2_params.yaml` marks the bridge's clearing endpoints as obstacles — OPEN
+### C3 — `real_nav2_params.yaml` marks the bridge's clearing endpoints as obstacles — FIXED (this branch)
 
 `costmap_to_cloud.py` emits, on every bearing that hits nothing, a *clearing
 endpoint* at exactly `raytrace_range_m` = **16.0 m** (`:43`, `:67-68`). It is
@@ -210,11 +210,14 @@ obstacle at 16 m, producing an arc of fake obstacles across the whole ±100°
 fan — exactly the "wall the planner cannot get past" failure that
 `costmap_to_cloud.py`'s docstring says the ray-casting design exists to avoid.
 
-Fix: set `obstacle_max_range: 15.5` / `raytrace_max_range: 16.0` in both
-costmaps in `real_nav2_params.yaml`, matching the auto_drive config. Better
-still, derive both from the bridge's own parameters so they cannot drift again.
+**Fixed here:** both costmaps in `real_nav2_params.yaml` now use
+`obstacle_max_range: 15.5` / `raytrace_max_range: 16.0`, matching the auto_drive
+config, with the reason in a comment. Not verified live (needs Nav2 running);
+the arithmetic is hand-checkable and auto_drive is the precedent. Deriving both
+from the bridge's own parameters would remove the drift risk entirely — worth
+doing if these ever need to change.
 
-### C4 — the default perception config silently disables road-keeping — OPEN
+### C4 — the default perception config silently disables road-keeping — FIXED (this branch)
 
 `costmap_to_cloud.py` only forwards cells at or above `obstacle_threshold: 97`.
 `real_nav2_params.yaml:89-93` warns about this in a comment:
@@ -239,6 +242,14 @@ the bridge log a warning at startup when the costmap it receives contains no
 cells at or above its threshold; or publish the threshold as a topic/param the
 bridge reads. The startup warning is the cheapest and catches every future
 drift.
+
+**Fixed here (both parts):** `perception_costmap.yaml` now sets
+`offroad_cost: 97` with the coupling documented, and `costmap_to_cloud.py`
+gained a runtime check that warns when a large sub-threshold plateau is seen.
+Measured effect of the bug: 17 marked rays out of 401 at `offroad_cost: 65`
+versus 386 at 97 — the road edges were simply absent from Nav2. Evidence and
+both-direction verification in
+`logs/results/2026-09-10_c3-c4-costmap-nav2-coupling.md`.
 
 ---
 
