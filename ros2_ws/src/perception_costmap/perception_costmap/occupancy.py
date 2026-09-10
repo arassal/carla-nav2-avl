@@ -26,6 +26,7 @@ Conventions
 """
 
 from dataclasses import dataclass
+import array
 import numpy as np
 import cv2
 
@@ -325,5 +326,12 @@ def to_occupancy_grid_msg(cost: np.ndarray, grid: GridSpec, stamp=None,
     msg.info.origin = origin
     # OccupancyGrid is row-major (index = row*width + col); numpy C-order
     # flatten of a (height, width) array gives exactly that.
-    msg.data = cost.astype(np.int8).flatten().tolist()
+    #
+    # Hand rclpy an array.array('b') rather than a list: the generated setter
+    # takes a fast path for array.array and returns immediately, while a list
+    # costs two full-length validation genexprs plus a re-conversion back to
+    # array.array. At 200x200 that is 80k Python-level checks per publish;
+    # profiling showed ~10% of this node's CPU time inside those genexprs.
+    flat = np.ascontiguousarray(cost, dtype=np.int8).reshape(-1)
+    msg.data = array.array('b', flat.tobytes())
     return msg
