@@ -115,7 +115,7 @@ Same missing-file family as B1/B2: six modules referenced, never committed.
 
 ## Code bugs
 
-### C1 — `GridSpec.world_to_cell` truncates toward zero, admitting out-of-grid points — OPEN
+### C1 — `GridSpec.world_to_cell` truncates toward zero, admitting out-of-grid points — FIXED (this branch)
 
 `ros2_ws/src/perception_costmap/perception_costmap/occupancy.py:63-69`
 
@@ -137,7 +137,10 @@ Observed with the default grid (`x_min=-4.0`, `y_min=-10.0`, `res=0.1`):
 | `(-4.099, 0.0)` | `(0, 100)` | `None` |
 | `(0.0, -10.05)` | `(40, 0)`  | `None` |
 
-Fix is `int(np.floor(...))`.
+Fix is `int(np.floor(...))`. **Applied**, plus two regression tests: one
+pinning the lower-edge rejection, and one asserting `world_to_cell` and
+`points_to_grid_mask` bin identically — the drift that let them disagree for a
+year is exactly what a shared cross-check prevents.
 
 This is the **same bug the team already fixed once**: `points_to_grid_mask`
 uses `np.floor` (`obstacles.py:215-216`) specifically to avoid it, and
@@ -258,7 +261,7 @@ both-direction verification in
 Individually small; together they cost a new contributor a lot of time, and
 `CLAUDE.md` opens with "Read this before trusting anything else in the repo."
 
-### D1 — test counts are wrong in six places — OPEN
+### D1 — test counts are wrong in six places — FIXED (this branch)
 
 Actual, on this branch:
 
@@ -273,7 +276,7 @@ Claimed: **39** at `README.md:34`, `README.md:65`,
 `ros2_ws/src/perception_costmap/README.md:133` — which contradicts the 39 in
 the Tests section of that same file.
 
-### D2 — five documented tools do not exist — OPEN
+### D2 — five documented tools do not exist — RECLASSIFIED: same missing-files bug as B1
 
 The Tools table in `ros2_ws/src/perception_costmap/README.md` lists these, and
 the "Still needs field data" section tells you to run two of them:
@@ -288,7 +291,28 @@ the "Still needs field data" section tells you to run two of them:
 `eval_road_iou.py`, `export_trt.py`, `ipm_overlay.py`,
 `shadow_robustness_test.py`, `viz_node.py`.
 
-### D3 — `perception/` directory is referenced but absent — OPEN
+**This is not a docs bug — it is B1 again.** All five were documented by
+`0e16bc3` (2026-09-08), the same commit that added the `costmap_cloud` and
+`evaluation` imports without their modules, and which touched only
+already-tracked files. **The missing-file count is 11, not 6:**
+
+    perception_costmap/detection_schedule.py     (breaks costmap_node)
+    perception_costmap/inference_worker.py       (breaks costmap_node)
+    perception_costmap/sample_buffer.py          (breaks costmap_node)
+    perception_costmap/health.py                 (breaks costmap_node)
+    perception_costmap/costmap_cloud.py          (broke the bridge; replaced here)
+    perception_costmap/evaluation.py             (breaks eval_road_iou.py)
+    tools/eval_ipm_calibration.py
+    tools/benchmark_models.py
+    tools/measure_zed_sync.py
+    tools/analyze_zed_depth.py
+    deploy/record_perception_bag.sh
+
+The README table entries are now marked **(NOT IN REPO)** rather than deleted —
+deleting them would erase the only record that these tools were written. Ask
+Alexander to search for all eleven, not just the six that break imports.
+
+### D3 — `perception/` directory is referenced but absent — FIXED (this branch)
 
 Cited at `README.md:37` ("Adam Castillo's original prototype scripts"),
 `CLAUDE.md:37` ("Keep author credits intact"), `DESIGN.md:67`,
@@ -300,13 +324,13 @@ Castillo be preserved, and the directory that carried it is gone. `.mailmap`
 and `CONTRIBUTORS.md` still exist, so the attribution isn't lost, but the
 files those docs point at are.
 
-### D4 — `CLAUDE.md` points at a plan file that does not exist — OPEN
+### D4 — `CLAUDE.md` points at a plan file that does not exist — FIXED (this branch)
 
 `CLAUDE.md:40` cites `docs/plans/2026-07-01-perception-v2-sim-to-real.md`
 ("all 10 tasks complete"). The only plan in the tree is
 `ros2_ws/docs/superpowers/plans/2026-07-16-perception-accuracy-prompt-and-plan.md`.
 
-### D5 — costmap legend says off-road = 97, the node default is 65 — OPEN
+### D5 — costmap legend says off-road = 97, the node default is 65 — FIXED by C4
 
 `ros2_ws/src/perception_costmap/README.md:11` documents the output as
 "road = 0, caution = 1-96, off-road = 97, lethal = 100". But `offroad_cost`

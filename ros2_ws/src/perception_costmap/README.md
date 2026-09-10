@@ -63,7 +63,7 @@ Two options in `config/perception_costmap.yaml`:
 
 ```bash
 cd ros2_ws/src/perception_costmap
-PYTHONPATH=.:$PYTHONPATH python3 -m pytest test -q     # 39 offline tests
+PYTHONPATH=.:$PYTHONPATH python3 -m pytest test -q     # 70 passed (2026-09-10)
 ```
 
 ## CARLA smoke test (on the x86 / 5090 box)
@@ -130,7 +130,7 @@ result rather than briefly publishing a road-only map during model warm-up.
   the presence of a TensorRT engine alone is not an acceptance criterion.
 - Blind-region policy is intentionally unchanged by this upgrade.
 
-**Done and verified offline + on the Dinosaur Jetson (78 tests green):**
+**Done and verified offline + on the Dinosaur Jetson (offline suite green):**
 - Sensor-data (`BEST_EFFORT`) QoS on every subscription, with `image_stale_sec`
   / `lidar_stale_sec` guards that drop frames instead of building a costmap
   from stale data.

@@ -85,11 +85,18 @@ local_costmap:
       # as a reference alternative and is NOT used on this path.
       #
       # ROAD-KEEPING DEPENDENCY: off-road cells only reach Nav2 if perception
-      # marks them at/above costmap_to_cloud's OBST_THRESH (97). That matches
-      # perception_dinosaur.yaml's offroad_cost: 97. If you lower offroad_cost
-      # below 97 (the perception_costmap.yaml default is 65), off-road stops
-      # entering the cloud and road-keeping silently disappears -- keep the two
-      # values in sync.
+      # marks them at/above costmap_to_cloud's obstacle_threshold (97). Both
+      # perception_dinosaur.yaml and perception_costmap.yaml now set
+      # offroad_cost: 97 -- keep them in sync. Lowering either below the
+      # threshold stops off-road entering the cloud and road-keeping silently
+      # disappears: obstacles still mark (they are always LETHAL 100), so
+      # avoidance keeps working and only road-keeping vanishes.
+      #
+      # 2026-09-10: perception_costmap.yaml did not set offroad_cost at all and
+      # fell back to the code default of 65, so the DEFAULT pipeline shipped
+      # with no road-keeping. Measured on one scene: 17 marked rays out of 401
+      # at 65, versus 386 at 97. costmap_to_cloud.py now warns at runtime when
+      # it sees a large sub-threshold plateau, so this cannot recur silently.
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: true
