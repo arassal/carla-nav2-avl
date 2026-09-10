@@ -70,6 +70,49 @@ throwing away working, on-car-validated code.
 
 ---
 
+### B2 — autodrive click always rejected: the Nav2 cloud bridge cannot import — FIXED (this branch)
+
+**This is the reported "click a point, says Nav2 bridge not connected" bug.**
+
+`deploy/costmap_to_cloud.py:31` imported `perception_costmap.costmap_cloud`,
+which did not exist in any commit. The bridge died on import, so
+`/perception/costmap_cloud` was never published, so `campus_navigator.py`'s
+preflight (`:296-297`) saw `_cloud_t == 0.0` and refused every destination
+click with *"computer-vision Nav2 bridge is stale."*
+
+`auto_drive.launch.py:137-138` respawns it every 2 s, so it crash-looped
+invisibly rather than failing loudly.
+
+Fixed here: wrote `perception_costmap/costmap_cloud.py` (`raycast_costmap`) to
+the contract the caller and its comments specify — one endpoint per bearing,
+nearest occupied cell only, never the occlusion shadow behind it. 9 offline
+tests. Verified end-to-end on the laptop at 10 Hz with a new
+`tools/fake_costmap_publisher.py` fixture.
+
+Full trace and evidence:
+`logs/results/2026-09-10_autodrive-click-rejection-rootcause.md`.
+
+**Reconcile with Alexander before merging** — same caveat as B1. If he has a
+`costmap_cloud.py` on the car, his is the one that has actually driven; keep
+the tests either way.
+
+### B3 — `eval_road_iou.py` imports a module that does not exist — OPEN
+
+`tools/eval_road_iou.py:23`:
+
+```python
+from perception_costmap.evaluation import binary_metrics
+```
+
+`perception_costmap/evaluation.py` is not in the tree or in any commit. This is
+the tool `README.md`'s "Still needs field data" section tells you to run to
+decide whether TwinLiteNet may be promoted over HSV — the stated gate on that
+decision cannot currently be executed.
+
+Same missing-file family as B1/B2: six modules referenced, never committed.
+
+---
+
 ## Code bugs
 
 ### C1 — `GridSpec.world_to_cell` truncates toward zero, admitting out-of-grid points — OPEN
@@ -268,6 +311,9 @@ Present locally, correctly gitignored, not tracked. Noted only so nobody
   promises.
 - `driving_seg` offline suite: **7 passed**, 0.09 s, with
   `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`.
+- After the B2 fix the `perception_costmap` suite is **68 passed** (59 + 9 new
+  `test_costmap_cloud.py`), and `deploy/costmap_to_cloud.py` runs, consuming a
+  synthetic costmap and publishing `/perception/costmap_cloud` at 10 Hz.
 - Every relative import in `driving_seg/driving_seg/` resolves.
 
 Not yet attempted here: `colcon build` (this box is ROS 2 **Jazzy**, the
