@@ -28,7 +28,7 @@ from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from .occupancy import GridSpec, build_cost_array, to_occupancy_grid_msg
 from . import segmentation, obstacles, bev
 from .util import stamp_to_sec, is_fresh
-from .temporal import TemporalObstacleFilter, reproject_grid
+from .temporal import TemporalObstacleFilter, remap_with, reproject_maps
 from .detection_schedule import DetectionScheduler
 from .inference_worker import LatestTaskWorker
 from .sample_buffer import PoseBuffer, TimestampedBuffer
@@ -558,13 +558,16 @@ class CostmapNode(Node):
             seen = observation["observed"]
             if (observation["pose"] is not None and self._odom_pose is not None
                     and is_fresh(self._odom_stamp, now, self.odom_stale)):
-                seen = reproject_grid(
-                    seen.astype(np.uint8), observation["pose"],
-                    self._odom_pose, self.grid).astype(bool)
+                # One pose change, so one set of sampling maps -- build them
+                # once and reuse for `seen` plus every class mask. Calling
+                # reproject_grid per array rebuilt these identical maps 5x per
+                # observation, which profiled as ~10% of main-thread time.
+                maps = reproject_maps(
+                    seen.shape, observation["pose"], self._odom_pose,
+                    self.grid)
+                seen = remap_with(seen.astype(np.uint8), maps).astype(bool)
                 masks = {
-                    group: reproject_grid(
-                        mask.astype(np.uint8), observation["pose"],
-                        self._odom_pose, self.grid).astype(bool)
+                    group: remap_with(mask.astype(np.uint8), maps).astype(bool)
                     for group, mask in masks.items()
                 }
             observed |= seen

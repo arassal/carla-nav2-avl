@@ -105,6 +105,11 @@ def inflate_costs(obstacle_mask: np.ndarray, resolution: float,
     dist_px = cv2.distanceTransform(not_obstacle, cv2.DIST_L2, 5)
     dist_m = dist_px * resolution
 
+    # NB: computing exp() only on cells within inflation_radius (and leaving
+    # the rest at -1) looks like an easy saving, but measured SLOWER on the
+    # Jetson -- 0.94 ms vs 0.82 ms at 200x200. Boolean-mask gather + scatter
+    # costs more than the vectorised exp over contiguous memory that it
+    # avoids. Left as the straightforward whole-array form on purpose.
     decay = lethal * np.exp(-cost_scaling_factor * dist_m)
     decay[dist_m > inflation_radius] = -1.0
     decay[obstacle_mask.astype(bool)] = float(lethal)

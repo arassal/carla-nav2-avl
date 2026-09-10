@@ -70,7 +70,13 @@ def segment_road_hsv(img_bgr,
         areas = stats[1:, cv2.CC_STAT_AREA]
         largest_area = areas.max()
         keep_labels = 1 + np.where(areas >= min_blob_frac * largest_area)[0]
-        mask = np.isin(labels, keep_labels).astype(np.uint8) * 255
+        # Label ids are dense integers in [0, num), so membership is a direct
+        # table lookup. np.isin sorts and searches per pixel instead, which
+        # profiled as ~10% of this node's main-thread time on the Jetson.
+        # Same result, O(pixels) instead of O(pixels log keep).
+        keep_lut = np.zeros(num, dtype=bool)
+        keep_lut[keep_labels] = True
+        mask = keep_lut[labels].astype(np.uint8) * 255
     return mask > 0
 
 
