@@ -27,6 +27,8 @@ not, so cells the costmap considered UNKNOWN were shown as observed and
 coloured green. The costmap node now publishes its own `known` mask and we use
 that -- one source of truth.
 """
+import array
+
 import numpy as np
 import rclpy
 from rclpy.node import Node
@@ -62,7 +64,13 @@ def build_lut():
 class CostmapRGB(Node):
     def __init__(self):
         super().__init__('costmap_rgb')
-        self.declare_parameter('publish_rate', 2.0)
+        # Matches the costmap's own 10 Hz. This was throttled to 2 Hz because
+        # each publish burned ~86% of a core in rclpy's PointCloud2.data
+        # validation; with that fixed (see _publish_latest) the display can
+        # keep up with perception instead of updating five times slower than
+        # the map it is drawing. The stamp check below still skips duplicate
+        # frames, so a slower costmap simply publishes less often.
+        self.declare_parameter('publish_rate', 10.0)
         self.lut = build_lut()
         self.known = None       # bool array, from /perception/known
         self.latest_cost = None
@@ -148,7 +156,14 @@ class CostmapRGB(Node):
         ]
         out.point_step = 16
         out.row_step = out.point_step * out.width
-        out.data = pts.tobytes()
+        # rclpy's PointCloud2.data setter returns immediately for an
+        # array.array('B'); anything else (bytes included) is validated
+        # element-by-element in Python -- 640 kB per publish here, which
+        # profiled as ~86% of this node's CPU and is why the display had to be
+        # throttled to 2 Hz in the first place.
+        data = array.array('B')
+        data.frombytes(pts.tobytes())
+        out.data = data
         self.pub.publish(out)
 
 
