@@ -13,6 +13,21 @@ architecture.
 | `/perception/obstacle_points` | `sensor_msgs/PointCloud2` | lidar obstacle returns (for Nav2's obstacle layer) |
 | `/perception/costmap_cloud` | `sensor_msgs/PointCloud2` | nearest lethal/off-road boundary per bearing consumed by Nav2 |
 
+## Services
+
+| Service | Type | Meaning |
+|---------|------|---------|
+| `/perception/reset` | `std_srvs/Trigger` | Drop all accumulated state — per-cell temporal confidence, motion-compensation reference, buffered samples, counters — without restarting. Models, parameters and homographies are untouched, so the node publishes again on the next tick. |
+
+Call it between runs with `deploy/fresh_run.sh`, which also clears both Nav2
+costmaps and reports whether the stack is genuinely clean.
+
+**Why it matters for IGVC:** each run must carry nothing over from the last.
+Nothing here is written to disk, both Nav2 costmaps are rolling with no static
+layer, and STVL decays in ~3 s — the temporal filter is the only state that
+outlives a run, and it does so for the life of the process. Restarting the
+whole stack cleared it by accident; this makes it deliberate and instant.
+
 ## Build
 
 ```bash

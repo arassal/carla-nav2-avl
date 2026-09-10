@@ -395,6 +395,40 @@ Present locally, correctly gitignored, not tracked. Noted only so nobody
 
 ---
 
+## Built here, beyond the bug fixes
+
+### `/perception/reset` — between-runs state reset (IGVC phase 1)
+
+`costmap_node.py` had no reset path of any kind: the `TemporalObstacleFilter`
+confidence arrays accumulate across ticks by design and live for the life of
+the process, so a second run in the same process started with the first run's
+obstacles still confirmed. The only clear was restarting the whole stack, which
+worked by accident and is not a between-runs procedure.
+
+Added:
+- `TemporalObstacleFilter.reset()` (`temporal.py`) — ROS-free, returns the
+  count of cells that were reporting lethal so a caller can say what it threw
+  away instead of claiming success blindly. 3 tests.
+- `util.clear_sample_buffer()` — best-effort, because `sample_buffer.py` is
+  missing (B1) and its API is only inferable from call sites. Handles both
+  plausible shapes and reports failure rather than guessing. 2 tests.
+- `/perception/reset` (`std_srvs/Trigger`) in `costmap_node.py` — 58 lines,
+  self-contained, so it re-applies easily if Alexander's `costmap_node.py`
+  supersedes this one.
+- `deploy/fresh_run.sh` — calls the reset plus both Nav2 costmap clears,
+  reports per-step status, and exits non-zero telling you not to start a scored
+  run. Verified in all three branches: service missing, service OK, and service
+  answering `success=False` (which `ros2 service call` reports with exit code
+  0 — the payload has to be checked, not the exit status).
+
+**Caveat:** the handler itself is not runtime-tested, because `costmap_node.py`
+still cannot be imported (B1). It is covered by 5 static AST tests instead, the
+important one asserting that every attribute the handler assigns already exists
+in `__init__` — a typo there would silently create a new attribute and leave
+the real one stale, which is the actual failure mode of attribute-based reset
+code. That test was verified to fail on an injected typo. Replace these with a
+live service call once B1 lands.
+
 ## Verified working (so nobody re-checks)
 
 - `git clone` + `git checkout copy` — clean, no LFS, no submodules.

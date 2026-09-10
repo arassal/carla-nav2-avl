@@ -54,3 +54,40 @@ def test_motion_compensation_rotates_world_fixed_obstacle():
     f.compensate_motion((0, 0, 0), (0, 0, np.pi / 2), grid)
     # A +90 degree robot rotation moves the old forward point to robot-right.
     assert f.conf[0:2, 2:4].max() > 0.9
+
+
+def test_reset_forgets_confirmed_obstacles():
+    """A confirmed obstacle must not survive a reset.
+
+    IGVC requires each run start with nothing carried over. The filter is the
+    only thing in the perception node that accumulates across ticks.
+    """
+    f = TemporalObstacleFilter((3, 3))
+    obs, seen = _masks((3, 3), [(1, 1)])
+    f.update(obs, seen)
+    assert f.update(obs, seen)[1, 1]           # confirmed lethal
+
+    assert f.reset() == 1                       # reports what it cleared
+    assert f.conf.max() == 0.0
+
+    # and the evidence is genuinely gone: one hit must not re-confirm it,
+    # the same two-hit rule a cold-started filter enforces
+    assert not f.update(obs, seen)[1, 1]
+    assert f.update(obs, seen)[1, 1]
+
+
+def test_reset_on_a_cold_filter_is_a_no_op():
+    f = TemporalObstacleFilter((3, 3))
+    assert f.reset() == 0
+    assert f.conf.max() == 0.0
+
+
+def test_reset_does_not_reallocate_the_array():
+    """compensate_motion rebinds self.conf; reset must not, or a caller
+    holding a reference would keep writing into the abandoned array."""
+    f = TemporalObstacleFilter((3, 3))
+    before = f.conf
+    f.update(*_masks((3, 3), [(0, 0)]))
+    f.reset()
+    assert f.conf is before
+    assert f.conf.dtype == np.float32
