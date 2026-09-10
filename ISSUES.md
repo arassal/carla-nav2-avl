@@ -183,6 +183,63 @@ bottleneck keeping the car at ~5 Hz (below the 8 Hz acceptance bar), and
 disagree on channel order, that export will change accuracy as well as speed,
 and the change will look like a TensorRT problem.
 
+### C3 — `real_nav2_params.yaml` marks the bridge's clearing endpoints as obstacles — OPEN
+
+`costmap_to_cloud.py` emits, on every bearing that hits nothing, a *clearing
+endpoint* at exactly `raytrace_range_m` = **16.0 m** (`:43`, `:67-68`). It is
+not an obstacle; it exists so Nav2 raytraces that bearing free. For that to
+work, Nav2's `obstacle_max_range` must be **below** 16 m, or the endpoint gets
+marked as a real obstacle.
+
+`nav2_params_auto_drive.yaml:396` gets this right, and says so:
+
+```yaml
+obstacle_max_range: 15.5  # clearing endpoints are emitted at 16 m and are not marked
+raytrace_max_range: 16.0
+```
+
+`real_nav2_params.yaml` does not:
+
+| costmap | `obstacle_max_range` | 16 m endpoint |
+|---|---|---|
+| local (`:106`)  | 20.0 | **marked as an obstacle** |
+| global (`:143`) | 30.0 | **marked as an obstacle** |
+
+So under `deploy/real_nav2_launch.py`, every clear bearing plants a phantom
+obstacle at 16 m, producing an arc of fake obstacles across the whole ±100°
+fan — exactly the "wall the planner cannot get past" failure that
+`costmap_to_cloud.py`'s docstring says the ray-casting design exists to avoid.
+
+Fix: set `obstacle_max_range: 15.5` / `raytrace_max_range: 16.0` in both
+costmaps in `real_nav2_params.yaml`, matching the auto_drive config. Better
+still, derive both from the bridge's own parameters so they cannot drift again.
+
+### C4 — the default perception config silently disables road-keeping — OPEN
+
+`costmap_to_cloud.py` only forwards cells at or above `obstacle_threshold: 97`.
+`real_nav2_params.yaml:89-93` warns about this in a comment:
+
+> ROAD-KEEPING DEPENDENCY: off-road cells only reach Nav2 if perception marks
+> them at/above costmap_to_cloud's OBST_THRESH (97). [...] If you lower
+> offroad_cost below 97 (the perception_costmap.yaml default is 65), off-road
+> stops entering the cloud and road-keeping silently disappears.
+
+The warning describes the shipped state. `config/perception_costmap.yaml` — the
+default config, the one `perception.launch.py` loads and the one the CARLA
+smoke test in the README uses — **does not set `offroad_cost` at all**, so it
+falls back to the node default of **65** (`costmap_node.py:196`,
+`occupancy.py:40`). Only `perception_dinosaur.yaml:162` sets 97.
+
+So anyone running the documented default pipeline gets obstacle avoidance but
+no road-keeping, with nothing in the logs to say so. Two coupled constants in
+two repos with no runtime check.
+
+Fix options: set `offroad_cost: 97` in `perception_costmap.yaml` too; or have
+the bridge log a warning at startup when the costmap it receives contains no
+cells at or above its threshold; or publish the threshold as a topic/param the
+bridge reads. The startup warning is the cheapest and catches every future
+drift.
+
 ---
 
 ## Docs that do not match the code
