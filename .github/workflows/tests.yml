@@ -1,0 +1,49 @@
+# Offline tests on every PR and push. No ROS, no GPU: only the ROS-free
+# modules are covered, so a green check does not mean the car works
+# (see CONTRIBUTING.md). Run the same commands locally before pushing.
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main, copy]
+
+jobs:
+  offline-tests:
+    runs-on: ubuntu-22.04  # the car's OS (JetPack 6.1 / Humble)
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"  # Humble's system Python
+
+      # numpy<2 matches the Jetson pin. Tests must pass with only these three.
+      - name: Install test dependencies
+        run: pip install "numpy<2" opencv-python-headless pytest
+
+      - name: perception_costmap tests
+        working-directory: ros2_ws/src/perception_costmap
+        run: PYTHONPATH=. python -m pytest test -q
+
+      - name: driving_seg tests
+        working-directory: driving_seg
+        run: PYTHONPATH=. python -m pytest test -q
+
+      # The Jetson floor is Python 3.8. Parse every file with 3.8's grammar
+      # so match statements, parenthesized context managers, etc. fail here
+      # instead of on the car.
+      - name: Python 3.8 syntax check
+        run: |
+          python - <<'EOF'
+          import ast, pathlib, sys
+          bad = []
+          for root in ("ros2_ws/src/perception_costmap", "driving_seg"):
+              for p in sorted(pathlib.Path(root).rglob("*.py")):
+                  try:
+                      ast.parse(p.read_text(), filename=str(p), feature_version=(3, 8))
+                  except SyntaxError as e:
+                      bad.append(f"{p}:{e.lineno}: {e.msg}")
+          print("\n".join(bad) or "all files parse as Python 3.8")
+          sys.exit(1 if bad else 0)
+          EOF
