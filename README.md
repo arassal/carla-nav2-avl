@@ -12,7 +12,7 @@ Jetson AGX Orin, ROS2 Humble). CARLA is x86-only and never runs on the Jetson
 1. **This README** — what the project is, the robot, what's real vs. stub.
 2. **`ros2_ws/src/perception_costmap/DESIGN.md`** — the architecture: how
    camera+lidar become a costmap Nav2 can plan on.
-3. **`ros2_ws/src/perception_costmap/README.md`** — build, run, and the 39
+3. **`ros2_ws/src/perception_costmap/README.md`** — build, run, and the
    offline tests (run them to confirm your checkout).
 4. **`REPRODUCE.md`** — put it on the actual car: hardware, deps, models, run.
 5. **`ros2_ws/src/perception_costmap/DEPLOY.md`** — Jetson bring-up detail.

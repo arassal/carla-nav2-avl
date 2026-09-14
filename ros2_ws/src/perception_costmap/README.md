@@ -78,7 +78,7 @@ Two options in `config/perception_costmap.yaml`:
 
 ```bash
 cd ros2_ws/src/perception_costmap
-PYTHONPATH=.:$PYTHONPATH python3 -m pytest test -q     # 70 passed (2026-09-10)
+PYTHONPATH=.:$PYTHONPATH python3 -m pytest test -q     # 90 passed (2026-09-14)
 ```
 
 ## CARLA smoke test (on the x86 / 5090 box)
