@@ -384,6 +384,10 @@ class CostmapNode(Node):
         self._depth_unmatched = 0
         self._depth_waits = 0
         self._ticks = 0
+        # Bumped by /perception/reset. Detection jobs carry it, so a result
+        # still on the worker thread when a reset lands is discarded instead
+        # of carrying the previous run's obstacles back in.
+        self._reset_generation = 0
         self._have_detection_result = False
         self._last_detection_result_time = None
         self._last_publish_time = None
@@ -530,6 +534,7 @@ class CostmapNode(Node):
             })
 
         return {
+            "generation": task["generation"],
             "observations": observations,
             "depth_count": depth_count,
             "ipm_count": ipm_count,
@@ -549,7 +554,7 @@ class CostmapNode(Node):
             self.get_logger().error("detector inference failed: %s" % error)
 
         result = self.detector_worker.take_latest()
-        if result is None:
+        if result is None or result["generation"] != self._reset_generation:
             return None
 
         empty = np.zeros((self.grid.height, self.grid.width), bool)
@@ -711,6 +716,7 @@ class CostmapNode(Node):
 
         if detection_jobs:
             self.detector_worker.submit({
+                "generation": self._reset_generation,
                 "cameras": detection_jobs,
             })
 
@@ -800,7 +806,8 @@ class CostmapNode(Node):
 
         Clears, in order: per-class temporal confidence, the motion-
         compensation reference pose, buffered lidar/odometry/camera samples,
-        and the detection-result gate. Parameters, homographies, loaded models
+        and the detection-result gate; any detector result still in flight is
+        discarded when it arrives (reset generation). Parameters, homographies, loaded models
         and subscriptions are untouched -- this is a memory reset, not a
         restart, so the node is publishing again on the next tick.
 
@@ -825,6 +832,7 @@ class CostmapNode(Node):
             clear_sample_buffer(cam.depth_buffer)
             clear_sample_buffer(cam.confidence_buffer)
 
+        self._reset_generation += 1
         self._have_detection_result = False
         self._last_detection_result_time = None
         self._last_publish_time = None
