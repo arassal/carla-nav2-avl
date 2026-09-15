@@ -123,6 +123,50 @@ def test_points_just_below_grid_min_are_dropped():
     assert not m.any()
 
 
+def test_world_to_cell_rejects_points_just_below_the_grid_min():
+    """The method points_to_grid_mask was named after had the same bug.
+
+    int() truncates toward zero, so anything in (min - resolution, min) landed
+    on index 0 and passed the bounds check. The vectorized caller above was
+    fixed with np.floor; world_to_cell kept truncating until 2026-09-10.
+    Only the lower edge was ever affected.
+    """
+    g = GridSpec(x_min=-4.0, x_max=16.0, y_min=-10.0, y_max=10.0,
+                 resolution=0.1)
+    assert g.world_to_cell(-4.05, 0.0) is None      # was (0, 100)
+    assert g.world_to_cell(-4.099, 0.0) is None     # was (0, 100)
+    assert g.world_to_cell(0.0, -10.05) is None     # was (40, 0)
+    assert g.world_to_cell(0.0, -10.5) is None      # was already None
+
+    # the exact lower corner is INSIDE, and the upper edge still excludes
+    assert g.world_to_cell(-4.0, -10.0) == (0, 0)
+    assert g.world_to_cell(15.99, 9.99) == (199, 199)
+    assert g.world_to_cell(16.0, 0.0) is None
+    assert g.world_to_cell(0.0, 10.0) is None
+
+
+def test_world_to_cell_agrees_with_points_to_grid_mask():
+    """The two must bin identically -- they are the same operation.
+
+    They disagreed for a year on points just below the grid minimum, which is
+    exactly the kind of drift a shared fixture catches and two separate
+    implementations do not.
+    """
+    g = GridSpec(x_min=-4.0, x_max=16.0, y_min=-10.0, y_max=10.0,
+                 resolution=0.1)
+    probes = [(-4.05, 0.0), (-4.0, -10.0), (0.0, 0.0), (5.0, 2.5),
+              (15.99, 9.99), (16.0, 0.0), (0.0, -10.05), (-3.999, 9.999)]
+    for x, y in probes:
+        cell = g.world_to_cell(x, y)
+        mask = points_to_grid_mask(np.array([[x, y, 1.0]]), g)
+        if cell is None:
+            assert not mask.any(), "%r: world_to_cell dropped it, mask kept it" % ((x, y),)
+        else:
+            col, row = cell
+            assert mask[row, col], "%r: disagreed on the cell" % ((x, y),)
+            assert mask.sum() == 1
+
+
 from perception_costmap.bev import homography_from_extrinsics
 
 
@@ -244,3 +288,19 @@ def test_semantic_obstacle_layer_shape_mismatch_raises():
                 "mask": np.ones((3, 3), bool), "radius": 1.0,
                 "scaling": 1.0, "exclusion_radius": 0.5,
             }})
+
+
+@pytest.mark.parametrize("scale", [1e15, 1e-15, -1.0])
+def test_known_mask_ignores_homography_scale(scale):
+    """H is defined only up to scale. OpenCV 4.6 returns the default
+    points-mode H scaled by ~1e15 (4.11 does not); the known mask must not
+    care, or the camera sees nothing on Ubuntu/ROS machines."""
+    grid = GridSpec(x_min=-4.0, x_max=16.0, y_min=-10.0, y_max=10.0,
+                    resolution=0.1)
+    image_pts = [[0, 160], [640, 160], [640, 320], [0, 320]]
+    world_pts = [[18, 8], [18, -8], [3, -4], [3, 4]]
+    H = bev.homography_from_points(image_pts, world_pts, grid)
+    reference = bev.bev_known_mask(H, (360, 640, 3), grid)
+    assert reference.sum() > 10000
+    assert np.array_equal(bev.bev_known_mask(H * scale, (360, 640, 3), grid),
+                          reference)

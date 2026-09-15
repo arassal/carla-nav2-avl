@@ -22,7 +22,7 @@ no silent failures.
 ## Where we are (verified)
 
 - `ros2_ws/src/perception_costmap`: 3× ZED X + velodyne → fused costmap.
-  39 offline tests green. Runs on the car ~4–5 Hz (TwinLiteNet 74 ms is
+  Offline tests green. Runs on the car ~4–5 Hz (TwinLiteNet 74 ms is
   the bottleneck). Mirror-projection + degenerate-homography + velodyne
   dtype crashes all fixed and regression-tested.
 - Nav2 verified consuming both perception topics (static + obstacle +
@@ -62,7 +62,7 @@ ROS-free; follow the package's existing conventions):
    Budget: cone stage ≤ 15 ms/camera on Orin.
 
 Accept: person AND cone placed in front of the car both become lethal
-cells within 300 ms (watch `/viz/costmap_render`); 39+ tests green; rate
+cells within 300 ms (watch `/viz/costmap_render`); tests green; rate
 not below current.
 
 ## Phase 2 — speed to ≥ 8 Hz on the car

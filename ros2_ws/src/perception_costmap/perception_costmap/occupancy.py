@@ -61,9 +61,19 @@ class GridSpec:
         return int(round((self.y_max - self.y_min) / self.resolution))
 
     def world_to_cell(self, x: float, y: float):
-        """World (x,y) in metres -> (col, row), or None if outside the grid."""
-        col = int((x - self.x_min) / self.resolution)
-        row = int((y - self.y_min) / self.resolution)
+        """World (x,y) in metres -> (col, row), or None if outside the grid.
+
+        Uses floor, not int() truncation. int() rounds toward zero, so a
+        coordinate up to one full cell BELOW x_min/y_min maps to index 0 and
+        passes the bounds check instead of being rejected -- silently dragging
+        out-of-grid points onto the border. ``points_to_grid_mask`` was fixed
+        for this in obstacles.py and pinned by
+        ``test_points_just_below_grid_min_are_dropped``; the method it was
+        named after kept the bug until 2026-09-10. Only the lower edge was
+        affected -- the upper edge was always rejected correctly.
+        """
+        col = int(np.floor((x - self.x_min) / self.resolution))
+        row = int(np.floor((y - self.y_min) / self.resolution))
         if 0 <= col < self.width and 0 <= row < self.height:
             return col, row
         return None

@@ -4,3 +4,10 @@ ros2_ws/log/
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# logs/: raw terminal + benchmark output is regenerable and host-specific.
+# logs/results/ (curated findings) and the .gitkeep placeholders are kept.
+logs/tests/*
+logs/bench/*
+logs/runs/*
+!logs/*/.gitkeep

@@ -85,11 +85,18 @@ local_costmap:
       # as a reference alternative and is NOT used on this path.
       #
       # ROAD-KEEPING DEPENDENCY: off-road cells only reach Nav2 if perception
-      # marks them at/above costmap_to_cloud's OBST_THRESH (97). That matches
-      # perception_dinosaur.yaml's offroad_cost: 97. If you lower offroad_cost
-      # below 97 (the perception_costmap.yaml default is 65), off-road stops
-      # entering the cloud and road-keeping silently disappears -- keep the two
-      # values in sync.
+      # marks them at/above costmap_to_cloud's obstacle_threshold (97). Both
+      # perception_dinosaur.yaml and perception_costmap.yaml now set
+      # offroad_cost: 97 -- keep them in sync. Lowering either below the
+      # threshold stops off-road entering the cloud and road-keeping silently
+      # disappears: obstacles still mark (they are always LETHAL 100), so
+      # avoidance keeps working and only road-keeping vanishes.
+      #
+      # 2026-09-10: perception_costmap.yaml did not set offroad_cost at all and
+      # fell back to the code default of 65, so the DEFAULT pipeline shipped
+      # with no road-keeping. Measured on one scene: 17 marked rays out of 401
+      # at 65, versus 386 at 97. costmap_to_cloud.py now warns at runtime when
+      # it sees a large sub-threshold plateau, so this cannot recur silently.
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: true
@@ -103,8 +110,17 @@ local_costmap:
           clearing: true
           min_obstacle_height: 0.1
           max_obstacle_height: 2.5
-          obstacle_max_range: 20.0
-          raytrace_max_range: 25.0
+          # MUST stay below the bridge's raytrace_range_m (16.0). On bearings
+          # that hit nothing, costmap_to_cloud emits a CLEARING endpoint at
+          # exactly 16 m; it is not an obstacle, it exists so Nav2 raytraces
+          # that bearing free. With obstacle_max_range above 16 those
+          # endpoints get MARKED, planting a phantom arc of obstacles across
+          # the whole +/-100 deg fan -- the same "wall the planner can't get
+          # past" failure the ray-cast design exists to avoid. Real hits are
+          # emitted at <= 15 m (obstacle_range_m), so 15.5 marks every genuine
+          # obstacle and no clearing endpoint. Matches nav2_params_auto_drive.yaml.
+          obstacle_max_range: 15.5
+          raytrace_max_range: 16.0
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
@@ -140,8 +156,11 @@ global_costmap:
           marking: true
           clearing: true
           max_obstacle_height: 2.5
-          obstacle_max_range: 30.0
-          raytrace_max_range: 35.0
+          # See the local_costmap note: the cloud never contains a point past
+          # 16 m, so ranges beyond that buy nothing and marking past 15.5
+          # turns the clearing endpoints into phantom obstacles.
+          obstacle_max_range: 15.5
+          raytrace_max_range: 16.0
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
