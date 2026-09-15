@@ -421,6 +421,12 @@ clouds, positional tracking, IMU and odometry; and cap processing at 8 fps.
 `point_cloud` and `odom`/`pose`. Whether turning them off frees measurable CPU/GPU
 is what the lean-launch car test (`DEPLOY.md` §7 step 3) measures.
 
+**First car attempt (2026-09-15), partial:** the ZED drivers confirmed the lean
+settings (no point cloud, no positional tracking, capped at 8 fps), but the
+cameras couldn't open after a hardware power cycle. The comparison needs a run
+after a Jetson reboot. Baseline and details:
+`logs/results/2026-09-15_lean-launch-car-attempt.md`.
+
 All 94 keys were checked against wrapper v5.2.2's parameter tree. **Not yet
 run on the car.** `depth_stabilization: 0` is the one real tradeoff: if depth
 gets too noisy, set 1 and turn positional tracking back on.
