@@ -409,3 +409,116 @@ a reset with an obstacle in view, so it reports N > 0 lethal cells cleared.
 
 Not yet attempted here: `colcon build` (this box is ROS 2 **Jazzy**, the
 project targets **Humble**), CARLA smoke test, anything on the Jetson.
+
+---
+
+## Camera launch and performance (2026-09-14)
+
+Found while building `launch/perception_stack.launch.py`. Profile evidence:
+`logs/results/2026-09-14_perception-profile-and-zed-audit.md`.
+
+### C8 — left and right ZED serials are swapped between launch paths — OPEN
+
+| camera | `deploy/full_stack_restart.sh`, `deploy/clean_camera_restart.sh` (boot + recovery) | `how_dinosaur_drives/lidar/sensors.launch.py` (from IGVC_ROS2) |
+|---|---|---|
+| front | 42569280 | 42569280 |
+| left  | **49910017** | **43779087** |
+| right | **43779087** | **49910017** |
+
+Start the cameras through the other path and `/zed_left` publishes the right
+camera's images: side obstacles land on the wrong side of the costmap, and
+every yaw calibration is 180° off. `perception_stack.launch.py` follows the
+boot scripts, since the 2026-07-09 calibration was done on that path.
+`sensors.launch.py` even carries `TODO: confirm right-camera serial`. **Needs
+someone at the car** to cover one camera and see which topic goes dark.
+
+### C9 — the car subscribes to a confidence map the ZED never advertises — NOT A BUG on the car (checked 2026-09-15)
+
+Suspected from the GitHub copy of avros_bringup's camera configs:
+zed-ros2-wrapper 5.2 only creates `confidence/confidence_map` when
+`depth.publish_depth_confidence: true` (default false), and those configs never
+set it, while `perception_dinosaur.yaml` subscribes to it.
+
+**On the car it's fine.** The installed configs
+(`~/IGVC/install/avros_bringup/share/avros_bringup/config/zed_*.yaml`) set
+`publish_depth_confidence: true`, and all three `confidence_map` topics are
+advertised (`logs/results/2026-09-15_car-test-dinosaur.md`). The GitHub copy of
+IGVC_ROS2 (last pushed 2026-06-01) is behind the car. The lean profiles keep
+the setting on explicitly, so they don't depend on the wrapper default.
+
+Lesson: audit the files installed on the car, not the GitHub copy.
+
+### P1 — ZED drivers compute things nothing reads — FIXED in `config/zed_perception_*.yaml`
+
+The avros_bringup camera configs were tuned for an older consumer, the
+kiwicampus semantic layer in Nav2, which read ZED point clouds. Nothing on the
+current stack reads a ZED point cloud (`deploy/depth_obstacle_node.py` does,
+but the boot script doesn't start it), yet every camera still runs:
+
+- **positional tracking**, kept on "because the cloud needs it". In wrapper
+  5.2 it also forces depth to be computed on every grab, with or without
+  subscribers, and the Xsens/EKF already own localization;
+- depth stabilization (temporal smoothing, requires positional tracking);
+- depth at the 15 fps grab rate, when the front publishes at 8;
+- side cameras publishing 15 Hz, when perception runs YOLO on each side
+  camera every 0.4 s. The node still converts every frame through cv_bridge.
+
+The lean profiles publish RGB, depth and confidence only; turn off point
+clouds, positional tracking, IMU and odometry; and cap processing at 8 fps.
+**Confirmed on the car (2026-09-15):** the installed configs set
+`pos_tracking_enabled: true`, and each camera advertises 27 topics including
+`point_cloud` and `odom`/`pose`. Whether turning them off frees measurable CPU/GPU
+is what the lean-launch car test (`DEPLOY.md` §7 step 3) measures.
+
+All 94 keys were checked against wrapper v5.2.2's parameter tree. **Not yet
+run on the car.** `depth_stabilization: 0` is the one real tradeoff: if depth
+gets too noisy, set 1 and turn positional tracking back on.
+
+### P2 — the costmap node's main thread is its bottleneck — ON HOLD until car testing
+
+Profiled with 3 cameras at the car's rates (front 8 Hz, sides 15 Hz,
+960x600), the car's config minus the TensorRT models, laptop CPU, on
+`copy` @ `0fedca3` plus this repo's C5/C6 fixes: the node needs **149% of a
+core** to hold 10 Hz, and the main-thread stages below cost **~28 ms per tick**
+(of 100 ms). The Orin's CPU cores are several times slower. Alexander's own
+py-spy run (`d5dac06`) found the same thing: main thread ~84% busy, CPU bound
+rather than GPU bound.
+
+| work, per tick | before `d5dac06` | now | why it costs |
+|---|---|---|---|
+| HSV road segmentation, 3 cameras | 21.5 ms | **18.1 ms** | runs on every camera **every tick**, even when the frame hasn't changed |
+| white-line mask, 3 cameras | 5.2 | **5.1** | same: every camera, every tick |
+| `build_cost_array` | 4.5 | **3.0** | `cv2.inpaint` for blind-spot infill |
+| grid reprojection | 3.8 | **1.8** | `d5dac06` builds the sampling maps once per observation |
+| `np.isin` in segmentation | 3.2 | **0** | `d5dac06` replaced it with a lookup table |
+
+Already done by Alexander in `d5dac06`: the `np.isin` lookup table and shared
+reprojection maps. Biggest remaining candidate: skip segmentation and the
+white-line mask when a camera's stamp hasn't changed (about 20% of front-camera
+ticks at 8 Hz; more once the side cameras drop to 8 Hz with the lean profiles).
+
+**On hold (team decision, 2026-09-14):** no costmap performance changes until
+PRs #1-#4 have been tested on the car (`DEPLOY.md` §7). The laptop profile
+shows where the time goes; the car's numbers decide which fixes are worth it.
+
+### P3 — `DEPLOY.md` still blames TwinLiteNet, which the car no longer runs — FIXED (docs)
+
+`DEPLOY.md` §6 and `full_stack_restart.sh` ("TRT engine + TwinLiteNet") name
+TwinLiteNet's 73.7 ms as the bottleneck, but `perception_dinosaur.yaml` now sets
+`segmentation_method: hsv`. The real bottleneck is P2. `DEPLOY.md` §6 now
+marks those numbers as historical, and §7 re-measures on the car.
+`full_stack_restart.sh`'s comment is left as-is: it's the as-run boot script
+and isn't being edited until the car test.
+
+### P4 — the boot service starts viewers nobody may be watching — OPEN
+
+`percept-stack.service` → `full_stack_restart.sh` starts, on every boot:
+`viz_node` (subscribes to all 3 RGB streams and renders a BEV composite),
+`costmap_rgb_node` (a 40,000-point colored cloud), `web_video_server`, an
+HTTP server, and **RViz with software OpenGL (llvmpipe)** showing the costmap
+plus 3 camera panels, whenever a NoMachine display exists.
+`auto_drive.launch.py` opens a second software-rendered RViz. RViz on
+llvmpipe renders on the CPU the controller and perception share, and its
+camera panels keep all three RGB streams flowing. `perception_stack.launch.py`
+starts none of these; run them only while someone is watching. The boot
+service itself is unchanged until the lean launch has run on the car.
