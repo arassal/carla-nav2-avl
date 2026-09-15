@@ -1,7 +1,7 @@
 # Perception profile, ZED driver audit, lean launch test
 
 **Date:** 2026-09-14 · **Host:** laptop (x86, ROS 2 Jazzy, apt OpenCV 4.6) — not the car
-**Branch:** `feature/christian-lean-launch` (profiled together with PR #3's modules)
+**Branch:** `feature/christian-lean-launch`, profiled on `copy` @ `0fedca3` plus PR #3's C5/C6 fixes
 
 ## 1. Costmap node profile
 
@@ -10,20 +10,24 @@ by `obstacle_method: classical` and no depth topics. A fixture published 3
 cameras at the car's current rates (front 8 Hz, left/right 15 Hz), 960x600
 BGR, plus `/wheel_odom` at 50 Hz. `python3 -m cProfile` on the node for ~25 s.
 
-    /perception/costmap     9.92 Hz
-    node CPU                165% of one core (incl. cProfile overhead), 31 threads
-    _tick                   265 calls, 38.2 ms each (budget 100 ms at 10 Hz)
+Profiled twice: first on this branch's own module versions before Alexander's
+`d5dac06`, then again on his committed code.
 
-| work (main thread, per tick) | ms | share of _tick |
+    /perception/costmap     9.92 Hz -> 9.96 Hz
+    node CPU                165% -> 149% of one core (incl. cProfile overhead), 31 threads
+
+| work (main thread, per tick) | before `d5dac06` | on `0fedca3` |
 |---|---|---|
-| HSV road segmentation, 3 cams (722 calls) | 21.5 | 56% |
-|   of which `np.isin` on the label image | 3.2 | 8% |
-| white-line mask, 3 cams | 5.2 | 14% |
-| `build_cost_array` (`cv2.inpaint` ~2 ms) | 4.5 | 12% |
-| `reproject_grid` (detector results + temporal filters) | 3.8 | 10% |
+| HSV road segmentation, 3 cams | 21.5 ms | 18.1 ms |
+|   of which `np.isin` on the label image | 3.2 | 0 (lookup table) |
+| white-line mask, 3 cams | 5.2 | 5.1 |
+| `build_cost_array` (`cv2.inpaint` ~2 ms) | 4.5 | 3.0 |
+| grid reprojection | 3.8 | 1.8 |
+| **sum of the stages above** | **35.0** | **28.0** |
 
-Top self-time: `cvtColor` 1.83 s, `split` 0.95 s, `ndarray.astype` 0.77 s,
-rclpy `_take_subscription` 0.72 s, `np.in1d` 0.71 s, `reproject_grid` 0.62 s.
+In the second run cProfile's own `_tick` total came out implausibly low
+(0.012 s over 263 calls) while every stage it calls was recorded normally, so
+the comparison uses the stage sums rather than `_tick`.
 
 Not measured: the detector worker thread (profiled main thread only), YOLO /
 cone TensorRT on the Jetson GPU, the ZED drivers themselves.

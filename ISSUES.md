@@ -415,31 +415,41 @@ All 94 keys were checked against wrapper v5.2.2's parameter tree. **Not yet
 run on the car.** `depth_stabilization: 0` is the one real tradeoff: if depth
 gets too noisy, set 1 and turn positional tracking back on.
 
-### P2 — the costmap node's main thread nearly fills its 100 ms budget — OPEN
+### P2 — the costmap node's main thread is its bottleneck — ON HOLD until car testing
 
 Profiled with 3 cameras at the car's rates (front 8 Hz, sides 15 Hz,
-960x600), the car's config minus the TensorRT models, laptop CPU: the node
-needs **165% of a core**, and `_tick` averages **38 ms of its 100 ms budget**.
-The Orin's CPU cores are several times slower, which lines up with the ~5 Hz
-`DEPLOY.md` measured. Where it goes, per tick:
+960x600), the car's config minus the TensorRT models, laptop CPU, on
+`copy` @ `0fedca3` plus this repo's C5/C6 fixes: the node needs **149% of a
+core** to hold 10 Hz, and the main-thread stages below cost **~28 ms per tick**
+(of 100 ms). The Orin's CPU cores are several times slower. Alexander's own
+py-spy run (`d5dac06`) found the same thing: main thread ~84% busy, CPU bound
+rather than GPU bound.
 
-| work | ms | share | why |
+| work, per tick | before `d5dac06` | now | why it costs |
 |---|---|---|---|
-| HSV road segmentation, 3 cameras | 21.5 | 56% | runs on every camera **every tick**, even when the frame hasn't changed; `np.isin` over the label image alone is 3.2 ms |
-| white-line mask, 3 cameras | 5.2 | 14% | same: every camera, every tick |
-| `build_cost_array` | 4.5 | 12% | `cv2.inpaint` for blind-spot infill is ~2 ms |
-| grid reprojection (motion compensation) | 3.8 | 10% | every class grid of every detector result, plus all 4 temporal filters, reprojected per tick |
+| HSV road segmentation, 3 cameras | 21.5 ms | **18.1 ms** | runs on every camera **every tick**, even when the frame hasn't changed |
+| white-line mask, 3 cameras | 5.2 | **5.1** | same: every camera, every tick |
+| `build_cost_array` | 4.5 | **3.0** | `cv2.inpaint` for blind-spot infill |
+| grid reprojection | 3.8 | **1.8** | `d5dac06` builds the sampling maps once per observation |
+| `np.isin` in segmentation | 3.2 | **0** | `d5dac06` replaced it with a lookup table |
 
-Cheapest wins, none done yet: skip segmentation and the white-line mask when
-a camera's stamp hasn't changed; replace `np.isin` with a lookup-table index;
-reproject one stacked array instead of five separate grids.
+Already done by Alexander in `d5dac06`: the `np.isin` lookup table and shared
+reprojection maps. Biggest remaining candidate: skip segmentation and the
+white-line mask when a camera's stamp hasn't changed (about 20% of front-camera
+ticks at 8 Hz; more once the side cameras drop to 8 Hz with the lean profiles).
 
-### P3 — `DEPLOY.md` still blames TwinLiteNet, which the car no longer runs — OPEN
+**On hold (team decision, 2026-09-14):** no costmap performance changes until
+PRs #1-#4 have been tested on the car (`DEPLOY.md` §7). The laptop profile
+shows where the time goes; the car's numbers decide which fixes are worth it.
+
+### P3 — `DEPLOY.md` still blames TwinLiteNet, which the car no longer runs — FIXED (docs)
 
 `DEPLOY.md` §6 and `full_stack_restart.sh` ("TRT engine + TwinLiteNet") name
 TwinLiteNet's 73.7 ms as the bottleneck, but `perception_dinosaur.yaml` now sets
-`segmentation_method: hsv`. The real bottleneck is P2. The measurements
-should be redone on the car.
+`segmentation_method: hsv`. The real bottleneck is P2. `DEPLOY.md` §6 now
+marks those numbers as historical, and §7 re-measures on the car.
+`full_stack_restart.sh`'s comment is left as-is: it's the as-run boot script
+and isn't being edited until the car test.
 
 ### P4 — the boot service starts viewers nobody may be watching — OPEN
 
