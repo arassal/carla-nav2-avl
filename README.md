@@ -12,32 +12,40 @@ Jetson AGX Orin, ROS2 Humble). CARLA is x86-only and never runs on the Jetson
 1. **This README** — what the project is, the robot, what's real vs. stub.
 2. **`ros2_ws/src/perception_costmap/DESIGN.md`** — the architecture: how
    camera+lidar become a costmap Nav2 can plan on.
-3. **`ros2_ws/src/perception_costmap/README.md`** — build, run, and the 39
+3. **`ros2_ws/src/perception_costmap/README.md`** — build, run, and the
    offline tests (run them to confirm your checkout).
 4. **`REPRODUCE.md`** — put it on the actual car: hardware, deps, models, run.
 5. **`ros2_ws/src/perception_costmap/DEPLOY.md`** — Jetson bring-up detail.
 6. **`driving_seg/README.md`** — only if working on cone/white-line segmentation.
 
+**Changing something?** Read **`CONTRIBUTING.md`** — branches, tests, PRs,
+conventions. **Something broken?** Check **`ISSUES.md`** first; it lists the
+known bugs, including one that currently stops the main node from starting.
+
 > `CLAUDE.md`, `FINALIZE.md`, and `driving_seg/PROMPT.md` are **AI-session
-> prompts / project-status ledgers**, not human tutorials — but `CLAUDE.md`'s
-> real-vs-stub map and `FINALIZE.md`'s phase plan are worth a skim.
+> prompts / project-status ledgers**, not human tutorials — but
+> `FINALIZE.md`'s phase plan is worth a skim.
 
 **Glossary:** IGVC = Intelligent Ground Vehicle Competition; BEV = bird's-eye
 view; IPM = inverse perspective mapping (homography ground-projection); EKF =
 extended Kalman filter (localization); GMSL = the ZED cameras' serial link;
 REP-103 = ROS's x-forward/y-left frame convention.
 
-## What's on this branch (all real, tested)
+## What's in this repo
 
 | where | what | start here |
 |---|---|---|
-| `ros2_ws/src/perception_costmap/` | camera+lidar → Nav2 costmap. Multi-camera BEV fusion, TwinLiteNet road seg, YOLOv8-TensorRT obstacles, temporal filter. 39 offline tests. | its `README.md`, then `DESIGN.md` |
+| `ros2_ws/src/perception_costmap/` | camera+lidar → Nav2 costmap. Multi-camera BEV fusion, TwinLiteNet road seg, YOLOv8-TensorRT obstacles, temporal filter. Offline test suite. | its `README.md`, then `DESIGN.md` |
 | `ros2_ws/src/perception_costmap/deploy/` | on-car ops: full-stack bringup (tmux), GMSL camera recovery, boot-time systemd unit, live phone dashboard | `deploy/README.md` |
 | `driving_seg/` | **NEW: multi-model driving segmentation — area highlighting, no bounding boxes.** People, vehicles, signs, lights, road, lanes, **cones**, white lines. 74 FPS on an RTX 5090; TensorRT path for the Jetson. | `driving_seg/README.md` and **`driving_seg/docs/CONE_DETECTION.md`** |
-| `perception/` | Adam Castillo's original prototype scripts the package grew from (credits preserved) | — |
+| `how_dinosaur_drives/` | plain-English tour of everything that moves the car: localization, route planning and autodrive, joystick and motors | `how_dinosaur_drives/README.md` |
+| ~~`perception/`~~ | Adam Castillo's original prototype scripts the package grew from. **Removed** in `060141f` (2026-08-05); recover with `git show 060141f^:perception/costmap.py`. Credit preserved in `CONTRIBUTORS.md` and `.mailmap`. | — |
 
-Not real yet (don't build on): `collision_guard`, `route_planner`,
-`sdc_common`, `controller`, `sdc_bringup` — stubs, see `CLAUDE.md`.
+**Not real yet — don't build on these:** `collision_guard`, `controller`,
+`route_planner`, `sdc_bringup`, `sdc_common`, `world_setup` (all in
+`ros2_ws/src/`). They are stubs; `controller` declares nodes whose files don't
+exist, and `sdc_bringup`'s launch file is broken. This list is the one place
+that tracks them.
 
 ## Cone detection — the 60-second version
 
@@ -62,7 +70,7 @@ pretrained model knows them. The approach lives in `driving_seg/`:
 Perception costmap (no ROS needed for tests):
 
     cd ros2_ws/src/perception_costmap
-    PYTHONPATH=. python3 -m pytest test -q          # 39 passed
+    PYTHONPATH=. python3 -m pytest test -q          # all green (use PYTHONPATH=. exactly; see CONTRIBUTING.md)
 
 Driving segmentation demo (any machine with a GPU):
 
@@ -79,5 +87,4 @@ live view at `http://<car-ip>:8090`, joystick at `https://<car-ip>:8000`.
 ## Team
 
 alexander (arassal) leads this branch; jchy05, AdamCastillo07, Ad-Tap have
-their own feature branches. Commit style and conventions: see `CLAUDE.md`.
-Development workflow: `CONTRIBUTION_GUIDE.md`.
+their own feature branches. Workflow and conventions: `CONTRIBUTING.md`.

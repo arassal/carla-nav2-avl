@@ -24,10 +24,11 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image, CameraInfo, PointCloud2
 from nav_msgs.msg import OccupancyGrid, Odometry
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
+from std_srvs.srv import Trigger
 
 from .occupancy import GridSpec, build_cost_array, to_occupancy_grid_msg
 from . import segmentation, obstacles, bev
-from .util import stamp_to_sec, is_fresh
+from .util import stamp_to_sec, is_fresh, clear_sample_buffer
 from .temporal import TemporalObstacleFilter, remap_with, reproject_maps
 from .detection_schedule import DetectionScheduler
 from .inference_worker import LatestTaskWorker
@@ -409,6 +410,12 @@ class CostmapNode(Node):
         self.obs_pub = self.create_publisher(PointCloud2, g["obstacle_points_topic"], 1)
         self.health_pub = self.create_publisher(
             DiagnosticArray, "/diagnostics", 10)
+        # Between-runs reset. The temporal filters accumulate evidence across
+        # ticks by design and nothing else clears them, so a second run in the
+        # same process starts with the first run's obstacles still confirmed.
+        # IGVC requires each run carry nothing over; restarting the whole stack
+        # did this by accident. See deploy/fresh_run.sh.
+        self.create_service(Trigger, "/perception/reset", self._on_reset)
         if self.use_lidar:
             self.create_subscription(
                 PointCloud2, g["lidar_topic"], self._on_lidar, qos_profile_sensor_data)
@@ -781,6 +788,56 @@ class CostmapNode(Node):
                     self.detector_worker.submitted,
                     self.detector_worker.replaced,
                     self.detector_worker.completed))
+
+    def _on_reset(self, request, response):
+        """Drop every accumulated observation and start as if freshly launched.
+
+        Clears, in order: per-class temporal confidence, the motion-
+        compensation reference pose, buffered lidar/odometry/camera samples,
+        and the detection-result gate. Parameters, homographies, loaded models
+        and subscriptions are untouched -- this is a memory reset, not a
+        restart, so the node is publishing again on the next tick.
+
+        Nothing is persisted to disk anywhere in this pipeline, and both Nav2
+        costmaps are rolling with no static layer, so after this call and a
+        Nav2 costmap clear the vehicle genuinely holds no prior-run state.
+        """
+        cleared = sum(f.reset() for f in self.obs_filters.values())
+
+        self._filter_pose = None
+        self._filter_odom_stamp = None
+        self._latest_points = None
+        self._pts_stamp = None
+        self._odom_pose = None
+        self._odom_stamp = None
+        clear_sample_buffer(self._odom_buffer)
+
+        for cam in self.cameras:
+            cam.img, cam.stamp = None, 0.0
+            cam.last_yolo_stamp = None
+            cam.last_cone_stamp = None
+            clear_sample_buffer(cam.depth_buffer)
+            clear_sample_buffer(cam.confidence_buffer)
+
+        self._have_detection_result = False
+        self._last_detection_result_time = None
+        self._last_publish_time = None
+        self._last_inference_cameras = {"yolo": [], "cones": []}
+        for counter in ("_depth_projections", "_ipm_fallbacks",
+                        "_confidence_projections", "_confidence_missing",
+                        "_confidence_rejected", "_depth_outlier_rejected",
+                        "_depth_matches", "_depth_unmatched", "_depth_waits",
+                        "_ticks", "_detector_errors"):
+            setattr(self, counter, 0)
+        self._last_detector_error_time = None
+
+        response.success = True
+        response.message = (
+            "perception reset: %d lethal cells cleared across %d temporal "
+            "filters; no prior-run state retained"
+            % (cleared, len(self.obs_filters)))
+        self.get_logger().warning(response.message)
+        return response
 
     def destroy_node(self):
         if hasattr(self, "detector_worker"):

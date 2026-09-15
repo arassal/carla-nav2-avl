@@ -109,11 +109,51 @@ class CostmapToCloud(Node):
         self.pub.publish(cloud)
 
         self.n += 1
+        # Cheap, infrequent guard against the offroad_cost/obstacle_threshold
+        # coupling silently breaking road-keeping. Once after ~5 s, then hourly-ish.
+        if self.n == 50 or self.n % 600 == 0:
+            self._warn_if_offroad_below_threshold(grid)
         if self.n % 20 == 0:
             self.get_logger().info(
                 f"published {self.n} clouds, latest {len(rows)} marked rays, "
                 f"{len(pts) - len(rows)} clearing rays "
                 f"(frame={header.frame_id})")
+
+
+    def _warn_if_offroad_below_threshold(self, grid):
+        """Warn when the source grid's off-road plateau sits below our threshold.
+
+        Only cells at or above ``obstacle_threshold`` are forwarded to Nav2.
+        Obstacles are always LETHAL (100) so they always get through, which is
+        exactly what makes a mismatch so quiet: avoidance keeps working while
+        road-keeping is gone. perception_costmap.yaml shipped for a long time
+        without setting offroad_cost at all, defaulting it to 65 -- below the
+        97 assumed here.
+
+        Off-road is one constant painted over a large area, so it shows up as a
+        single sub-threshold value covering a big fraction of the grid. That is
+        the signature we look for; a scene that genuinely has no off-road in it
+        produces no such plateau and no warning.
+        """
+        below = grid[(grid > 0) & (grid < self.obstacle_threshold)]
+        if below.size == 0:
+            return
+        counts = np.bincount(below.astype(np.int64),
+                             minlength=self.obstacle_threshold + 1)
+        value = int(counts.argmax())
+        fraction = float(counts[value]) / float(grid.size)
+        if fraction < 0.10:
+            return
+        self.get_logger().warning(
+            "%.0f%% of /perception/costmap sits at cost %d, below this "
+            "bridge's obstacle_threshold of %d. Cells below the threshold are "
+            "NOT forwarded to Nav2, so if %d is the perception node's "
+            "offroad_cost, ROAD-KEEPING IS DISABLED -- Nav2 will avoid "
+            "obstacles but not the road edge. Set offroad_cost >= %d in the "
+            "perception config (perception_dinosaur.yaml uses 97), or lower "
+            "obstacle_threshold here to match."
+            % (fraction * 100.0, value, self.obstacle_threshold, value,
+               self.obstacle_threshold))
 
 
 def main():

@@ -33,7 +33,7 @@ and lidar drivers publishing the same topics.
 ## 2. Build + verify (10 min)
     cd ros2_ws && colcon build --packages-select perception_costmap
     source install/setup.bash
-    cd src/perception_costmap && PYTHONPATH=.:$PYTHONPATH python3 -m pytest test -q
+    cd src/perception_costmap && PYTHONPATH=. python3 -m pytest test -q
     python3 tools/bench_perception.py --frames 50          # hsv baseline
 
 ## 3. Models

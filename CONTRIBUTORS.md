@@ -29,7 +29,7 @@ This project is built on professional autonomous driving research and integrates
 
 ## How to Contribute
 
-See [CONTRIBUTION_GUIDE.md](CONTRIBUTION_GUIDE.md) for details on:
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details on:
 - Branching strategy
 - Commit conventions
 - Pull request workflow

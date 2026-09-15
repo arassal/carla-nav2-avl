@@ -13,7 +13,7 @@
 | `src/world_setup` | stub / legacy (CARLA world setup) |
 | `src/carla_msgs` | message defs for the CARLA-sim path |
 
-See `CLAUDE.md` at the repo root for the authoritative real-vs-stub map.
+The root `README.md` keeps the authoritative real-vs-stub list.
 To build just the real package:
 
     colcon build --packages-select perception_costmap
