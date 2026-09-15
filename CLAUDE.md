@@ -10,17 +10,20 @@ This file adds only what an AI session is likely to get wrong.
 
 ## Don't trust a green test run
 
-The offline suite covers the ROS-free modules only. `costmap_node.py` — the
-main node — currently **cannot be imported**: it needs `detection_schedule`,
-`inference_worker`, `sample_buffer` and `health`, which were never committed
-(`ISSUES.md` B1). Never report "tests pass" as "the stack works".
+The offline suite covers the ROS-free modules only — no test starts
+`costmap_node.py`. Never report "tests pass" as "the stack works". To check
+the node itself, run it against a synthetic camera the way
+`logs/results/2026-09-14_costmap-node-live-run.md` (PR #3) does. That run found two
+bugs the suite could not, one of which only appears under Ubuntu's OpenCV 4.6,
+not pip's 4.11 (`ISSUES.md` C5, C6).
 
-## Missing files: ask, don't reimplement
+## "Missing" files: fetch and ask before writing
 
-Eleven files referenced by the code or docs are in no commit (list in
-`ISSUES.md` D2). They most likely exist uncommitted on the car and have been
-validated there. Do not write replacements without asking Alexander —
-a from-scratch version can silently discard working, on-car-tested code.
+In September 2026 eleven files the code imported were absent from `copy`
+(`ISSUES.md` B1-B3, D2). They were not unwritten: they sat untracked on
+Alexander's machine and were committed in `0fedca3`. A from-scratch
+replacement written in the meantime had to be thrown away. If something
+looks missing, `git fetch` first, then ask the team before implementing it.
 
 ## History that looks like a mistake but isn't
 
