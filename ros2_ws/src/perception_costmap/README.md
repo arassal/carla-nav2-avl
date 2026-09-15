@@ -38,6 +38,21 @@ source install/setup.bash
 
 ## Run
 
+**On the car**, start only what perception needs. The launch reuses anything
+already running, so two people can't start a camera twice:
+
+```bash
+ros2 launch perception_costmap perception_stack.launch.py                # sensors + 3 cameras + costmap
+ros2 launch perception_costmap perception_stack.launch.py cameras:=front # one camera
+ros2 launch perception_costmap perception_stack.launch.py --show-args    # everything else
+```
+
+Cameras use the lean `config/zed_perception_*.yaml` profiles: RGB, depth and
+confidence only, no point cloud or positional tracking. It does not start viz,
+streaming or RViz. See ISSUES.md P1-P4 for why.
+
+**Just the node** (CARLA, or with sensors already up):
+
 ```bash
 # defaults (topics in config/perception_costmap.yaml)
 ros2 launch perception_costmap perception.launch.py
