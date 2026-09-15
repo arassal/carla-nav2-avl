@@ -36,6 +36,10 @@ while the shipped default did it.
    mismatch shows up as a single sub-threshold value covering a big fraction of
    the grid. Runs at frame 50 (~5 s), then every 600.
 
+   > **Replaced 2026-09-15.** On the car this heuristic fired falsely on the
+   > `unknown_cost: 25` blind-spot plateau. The bridge now asks the perception
+   > node for its `offroad_cost` parameter instead (`ISSUES.md` C4).
+
 Verified both directions:
 
 ```

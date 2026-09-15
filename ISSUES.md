@@ -187,7 +187,14 @@ drift.
 
 **Fixed here (both parts):** `perception_costmap.yaml` now sets
 `offroad_cost: 97` with the coupling documented, and `costmap_to_cloud.py`
-gained a runtime check that warns when a large sub-threshold plateau is seen.
+reads the perception node's `offroad_cost` parameter every 10 s and warns if it
+is below `obstacle_threshold`.
+
+*Revised 2026-09-15 after a car test:* the first version guessed from the
+grid, warning on any large sub-threshold plateau. On dinosaur it fired falsely
+on `unknown_cost: 25` (18% of the grid) while `offroad_cost` was a correct 97.
+Reading the parameter is exact; re-verified both ways (65 warns, 97 logs
+"road edges reach Nav2").
 Measured effect of the bug: 17 marked rays out of 401 at `offroad_cost: 65`
 versus 386 at 97 — the road edges were simply absent from Nav2. Evidence and
 both-direction verification in

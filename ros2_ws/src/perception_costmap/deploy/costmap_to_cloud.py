@@ -25,6 +25,8 @@ from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from nav_msgs.msg import OccupancyGrid
+from rcl_interfaces.msg import ParameterType
+from rcl_interfaces.srv import GetParameters
 from sensor_msgs.msg import PointCloud2
 from sensor_msgs_py import point_cloud2
 
@@ -41,6 +43,8 @@ class CostmapToCloud(Node):
         self.declare_parameter("min_range_m", 0.3)
         self.declare_parameter("obstacle_range_m", 15.0)
         self.declare_parameter("raytrace_range_m", 16.0)
+        # Node whose offroad_cost must reach obstacle_threshold (see below).
+        self.declare_parameter("perception_node", "perception_costmap")
 
         self.obstacle_threshold = int(
             self.get_parameter("obstacle_threshold").value)
@@ -71,6 +75,18 @@ class CostmapToCloud(Node):
         self.create_subscription(OccupancyGrid, "/perception/costmap",
                                  self.cb, qos_profile_sensor_data)
         self.n = 0
+
+        # Road-keeping only works if the perception node paints off-road at or
+        # above obstacle_threshold: cells below it are never forwarded. Ask that
+        # node for its real offroad_cost instead of guessing from the grid --
+        # a large sub-threshold plateau can just as well be unknown_cost (25 on
+        # the car), which is what the earlier heuristic mistook for off-road.
+        node_name = str(self.get_parameter("perception_node").value).strip("/")
+        self._offroad_client = self.create_client(
+            GetParameters, "/%s/get_parameters" % node_name)
+        self._offroad_pending = False
+        self._offroad_seen = None
+        self.create_timer(10.0, self._check_offroad_cost)
 
     def cb(self, msg):
         r = msg.info.resolution
@@ -109,10 +125,6 @@ class CostmapToCloud(Node):
         self.pub.publish(cloud)
 
         self.n += 1
-        # Cheap, infrequent guard against the offroad_cost/obstacle_threshold
-        # coupling silently breaking road-keeping. Once after ~5 s, then hourly-ish.
-        if self.n == 50 or self.n % 600 == 0:
-            self._warn_if_offroad_below_threshold(grid)
         if self.n % 20 == 0:
             self.get_logger().info(
                 f"published {self.n} clouds, latest {len(rows)} marked rays, "
@@ -120,40 +132,44 @@ class CostmapToCloud(Node):
                 f"(frame={header.frame_id})")
 
 
-    def _warn_if_offroad_below_threshold(self, grid):
-        """Warn when the source grid's off-road plateau sits below our threshold.
+    def _check_offroad_cost(self):
+        """Re-read the perception node's offroad_cost; log only when it changes.
 
-        Only cells at or above ``obstacle_threshold`` are forwarded to Nav2.
-        Obstacles are always LETHAL (100) so they always get through, which is
-        exactly what makes a mismatch so quiet: avoidance keeps working while
-        road-keeping is gone. perception_costmap.yaml shipped for a long time
-        without setting offroad_cost at all, defaulting it to 65 -- below the
-        97 assumed here.
-
-        Off-road is one constant painted over a large area, so it shows up as a
-        single sub-threshold value covering a big fraction of the grid. That is
-        the signature we look for; a scene that genuinely has no off-road in it
-        produces no such plateau and no warning.
+        Rechecked every 10 s so a restarted perception node with a different
+        config is noticed. Silent while that node isn't up.
         """
-        below = grid[(grid > 0) & (grid < self.obstacle_threshold)]
-        if below.size == 0:
+        if self._offroad_pending or not self._offroad_client.service_is_ready():
             return
-        counts = np.bincount(below.astype(np.int64),
-                             minlength=self.obstacle_threshold + 1)
-        value = int(counts.argmax())
-        fraction = float(counts[value]) / float(grid.size)
-        if fraction < 0.10:
+        self._offroad_pending = True
+        future = self._offroad_client.call_async(
+            GetParameters.Request(names=["offroad_cost"]))
+        future.add_done_callback(self._on_offroad_cost)
+
+    def _on_offroad_cost(self, future):
+        self._offroad_pending = False
+        try:
+            values = future.result().values
+        except Exception:  # node went away mid-call; the timer retries
             return
-        self.get_logger().warning(
-            "%.0f%% of /perception/costmap sits at cost %d, below this "
-            "bridge's obstacle_threshold of %d. Cells below the threshold are "
-            "NOT forwarded to Nav2, so if %d is the perception node's "
-            "offroad_cost, ROAD-KEEPING IS DISABLED -- Nav2 will avoid "
-            "obstacles but not the road edge. Set offroad_cost >= %d in the "
-            "perception config (perception_dinosaur.yaml uses 97), or lower "
-            "obstacle_threshold here to match."
-            % (fraction * 100.0, value, self.obstacle_threshold, value,
-               self.obstacle_threshold))
+        if not values or values[0].type != ParameterType.PARAMETER_INTEGER:
+            return
+        cost = int(values[0].integer_value)
+        if cost == self._offroad_seen:
+            return
+        self._offroad_seen = cost
+        if cost < self.obstacle_threshold:
+            self.get_logger().warning(
+                "perception offroad_cost is %d, below this bridge's "
+                "obstacle_threshold of %d: off-road cells are NOT forwarded to "
+                "Nav2, so ROAD-KEEPING IS DISABLED -- Nav2 will avoid obstacles "
+                "but not the road edge. Set offroad_cost >= %d in the perception "
+                "config (perception_dinosaur.yaml uses 97), or lower "
+                "obstacle_threshold here to match."
+                % (cost, self.obstacle_threshold, self.obstacle_threshold))
+        else:
+            self.get_logger().info(
+                "perception offroad_cost %d >= obstacle_threshold %d: road edges "
+                "reach Nav2" % (cost, self.obstacle_threshold))
 
 
 def main():
