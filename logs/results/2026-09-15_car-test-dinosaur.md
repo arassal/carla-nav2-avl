@@ -67,10 +67,30 @@ reading the node's `offroad_cost` parameter instead. Re-run on the car:
     perception offroad_cost 97 >= obstacle_threshold 97: road edges reach Nav2
     /perception/costmap_cloud    9.83 Hz
 
+## 4. Autodrive click, indoors (the original dead-click bug)
+
+`auto_drive.launch.py` from avros_bringup, launched by hand in NoMachine with
+`cloud_bridge:=` pointing at this checkout's `deploy/costmap_to_cloud.py`, fed
+by the costmap node from section 2. `actuator_node` was not running and the
+installed `campus_navigator` has an arm-then-confirm gate, so nothing could
+drive; `/auto_drive/confirm` was never published. A destination was clicked in
+RViz with Publish Point.
+
+    /perception/costmap_cloud    10.03 Hz, bridge process from ~/chris_test
+    /odometry/global             5.15 Hz
+    status                       NOT READY: actuator state is stale
+
+`campus_navigator._preflight` runs its checks in order: global odometry,
+**Nav2 bridge**, costmap, actuator state, e-stop, then GNSS. Stopping at the
+actuator check means the first three passed. The reported bug was this same
+click failing at check 2, "computer-vision Nav2 bridge is stale". **Fixed on
+the car.** The actuator refusal is expected with `actuator_node` down; GNSS
+had no fix indoors, so the checks after it would have refused too.
+
 ## Not tested yet
 
-- The full click-to-drive path (Nav2 + campus_navigator + RViz click): waits
-  until the car is free, because the collision monitor publishes `/cmd_vel`.
+- Click-to-drive all the way (outdoors with a GNSS fix, actuator running, e-stop
+  in reach).
 - The lean launch (PR #4): needs the whole boot stack stopped.
 - A reset with obstacles in view (N > 0 lethal cells cleared).
 - The front camera path: camera down during the test.
