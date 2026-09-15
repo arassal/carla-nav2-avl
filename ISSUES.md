@@ -202,6 +202,39 @@ both-direction verification in
 
 ---
 
+### C5 — points-mode cameras see nothing under Ubuntu's OpenCV — FIXED (this branch)
+
+`bev.bev_known_mask` tested projective depth against a fixed `1e-9`, but a
+homography is only defined up to scale. For the default placeholder IPM points
+(`perception_costmap.yaml`), OpenCV 4.11 returns H unscaled while **OpenCV 4.6**
+— Ubuntu's apt build, which ROS uses (the car's 22.04 ships 4.5) — returns it
+scaled by ~1e15. Every depth then fell under the epsilon, the known mask was
+empty, and the costmap was 40,000/40,000 UNKNOWN. Invisible offline, because
+the test env uses pip's OpenCV 4.11.
+
+Fixed by normalizing H's scale before the depth test. Regression test feeds
+`H * 1e15`, `H * 1e-15` and `-H`; verified to fail without the fix. The car's
+`perception_dinosaur.yaml` uses camera-mode homographies and was unaffected
+under both OpenCV versions.
+
+### C6 — cameras without depth still waited for it, starving detection — FIXED (this branch)
+
+`_tick` held a frame back for up to `depth_wait_sec` (80 ms) whenever no depth
+sample matched — even for cameras with no `depth_topic`, where none ever
+arrives. When the camera rate matched `publish_rate` (10 Hz), every new frame
+landed inside that window: detection ran 13 times in 10 s instead of ~100.
+Only waits now when the camera publishes depth. The car configures depth on
+all three cameras, so this hit CARLA and the default config.
+
+### C7 — a detector result could survive `/perception/reset` — FIXED (this branch)
+
+A detection job still running on the inference worker when the reset lands
+returns a result built from the previous run's frames, which the next tick
+would consume. Jobs now carry a reset generation, and results from before the
+latest reset are ignored. Reasoned from the code, not observed.
+
+---
+
 ## Docs that do not match the code
 
 Individually small; together they cost a new contributor a lot of time, and
@@ -341,8 +374,17 @@ Added:
 asserting that every attribute the handler assigns already exists in
 `__init__` — a typo there would silently create a new attribute and leave the
 real one stale, the actual failure mode of attribute-based reset code. That
-test was verified to fail on an injected typo. A live call on the car is in
-`DEPLOY.md`'s test checklist once that lands.
+test was verified to fail on an injected typo.
+
+**Runtime-tested** on Jazzy with a synthetic camera: a live call cleared 301
+confirmed lethal cells and the costmap kept publishing
+(`logs/results/2026-09-14_costmap-node-live-run.md`).
+
+**Tested on the car** (2026-09-15, real ZED cameras and TensorRT models):
+`success=True` with the pipeline counters restarting from zero, and
+`deploy/fresh_run.sh --perception` exited 0
+(`logs/results/2026-09-15_car-test-dinosaur.md`, PR #1). Still to do on the car:
+a reset with an obstacle in view, so it reports N > 0 lethal cells cleared.
 
 ## Verified working (so nobody re-checks)
 

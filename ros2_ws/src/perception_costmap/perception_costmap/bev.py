@@ -141,6 +141,15 @@ def bev_known_mask(H, image_shape, grid: GridSpec) -> np.ndarray:
     "observed" ground on the opposite side of the car (found 2026-07-03).
     """
     h, w = image_shape[:2]
+    # A homography is only defined up to scale, but the depth test below
+    # uses a fixed epsilon, so pin the scale first. OpenCV 4.6 (Ubuntu/ROS
+    # apt) returns the default points-mode H scaled by ~1e15 where 4.11
+    # returns it unscaled; unnormalized, every depth fell under 1e-9 and the
+    # camera "saw" nothing -- an all-UNKNOWN costmap (found 2026-09-14).
+    H = np.asarray(H, dtype=np.float64)
+    scale = np.abs(H).max()
+    if scale > 0:
+        H = H / scale
     try:
         Hinv = np.linalg.inv(H)                    # grid -> image, homogeneous
     except np.linalg.LinAlgError:

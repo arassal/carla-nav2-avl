@@ -288,3 +288,19 @@ def test_semantic_obstacle_layer_shape_mismatch_raises():
                 "mask": np.ones((3, 3), bool), "radius": 1.0,
                 "scaling": 1.0, "exclusion_radius": 0.5,
             }})
+
+
+@pytest.mark.parametrize("scale", [1e15, 1e-15, -1.0])
+def test_known_mask_ignores_homography_scale(scale):
+    """H is defined only up to scale. OpenCV 4.6 returns the default
+    points-mode H scaled by ~1e15 (4.11 does not); the known mask must not
+    care, or the camera sees nothing on Ubuntu/ROS machines."""
+    grid = GridSpec(x_min=-4.0, x_max=16.0, y_min=-10.0, y_max=10.0,
+                    resolution=0.1)
+    image_pts = [[0, 160], [640, 160], [640, 320], [0, 320]]
+    world_pts = [[18, 8], [18, -8], [3, -4], [3, 4]]
+    H = bev.homography_from_points(image_pts, world_pts, grid)
+    reference = bev.bev_known_mask(H, (360, 640, 3), grid)
+    assert reference.sum() > 10000
+    assert np.array_equal(bev.bev_known_mask(H * scale, (360, 640, 3), grid),
+                          reference)
