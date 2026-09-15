@@ -1,0 +1,70 @@
+# ZED X left camera, lean profile for perception_costmap.
+#
+# Passed as ros_params_override_path by launch/cameras.launch.py, layered on
+# the wrapper's common_stereo.yaml + zedx.yaml (written against zed-ros2-wrapper
+# v5.2.x). Identical to zed_perception_front.yaml except where marked
+# [PER CAMERA]. Mounted on the left side, facing left.
+#
+# perception_costmap reads exactly four streams per camera:
+#   rgb/color/rect/image          rgb/color/rect/camera_info
+#   depth/depth_registered        confidence/confidence_map
+# Everything else is off. The avros_bringup configs this replaces were tuned
+# for an older consumer (the kiwicampus semantic layer inside Nav2) that read
+# ZED point clouds, which is why they kept point clouds and positional tracking
+# running. Nothing on the current stack reads either, and positional tracking
+# forces depth to be computed on every grab even with no subscribers.
+
+/**:
+  ros__parameters:
+    general:
+      grab_resolution: 'SVGA'           # 960x600; keeps a CPU core free for control (2026-05-29 field test)
+      grab_frame_rate: 15               # sensor capture rate; short exposure needs a real capture rate
+      grab_compute_capping_fps: 8.0     # but only PROCESS 8 frames/s -- depth was computed at 15
+      pub_frame_rate: 8.0               # perception ticks at 10 Hz; side cams get YOLO every 0.4 s
+
+    video:
+      publish_rgb: true                 # rgb/color/rect/image + camera_info
+      publish_left_right: false
+      publish_raw: false
+      publish_gray: false
+      publish_stereo: false
+      # [PER CAMERA] auto exposure: the front camera's daylight lock was never
+      # tuned for the sides.
+
+    depth:
+      depth_mode: 'NEURAL_LIGHT'
+      min_depth: 0.3
+      max_depth: 8.0                    # [PER CAMERA] side coverage is short range
+      # Stabilization (temporal smoothing) requires positional tracking. The
+      # node already rejects depth outliers (depth_mad_scale) and filters
+      # obstacles over time (temporal.py). VERIFY ON THE CAR: if depth looks
+      # too noisy, set 1 and re-enable pos_tracking below.
+      depth_stabilization: 0
+      publish_depth_map: true           # depth/depth_registered
+      publish_depth_confidence: true    # confidence/confidence_map -- default false in the
+                                        # wrapper, and the node subscribes to it. Without it every
+                                        # frame waited depth_wait_sec for a map that never came.
+      publish_point_cloud: false
+      publish_depth_info: false
+      publish_disparity: false
+
+    pos_tracking:
+      pos_tracking_enabled: false       # robot_localization (EKF + Xsens + GPS) owns localization
+      publish_odom_pose: false
+
+    mapping:
+      mapping_enabled: false
+    object_detection:
+      od_enabled: false
+    body_tracking:
+      bt_enabled: false
+    stream_server:
+      stream_enabled: false
+
+    sensors:
+      sensors_image_sync: false
+      publish_imu: false                # the Xsens is the IMU
+      publish_imu_raw: false
+      publish_mag: false
+      publish_baro: false
+      publish_temp: false
