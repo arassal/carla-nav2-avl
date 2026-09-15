@@ -80,3 +80,19 @@ perception_costmap:
     temporal_miss: 0.2
     temporal_threshold: 0.5
     temporal_enabled: true
+
+    # --- cost shape ---
+    # offroad_cost MUST be >= costmap_to_cloud.py's obstacle_threshold (97) or
+    # road-keeping silently disappears. That bridge is the only path from this
+    # grid into Nav2's ObstacleLayer, and it forwards a cell only when its cost
+    # reaches the threshold. Obstacles are always LETHAL (100) so they always
+    # get through -- but off-road at the code default of 65 (occupancy.py:40)
+    # never does, so Nav2 would avoid obstacles while happily driving off the
+    # road, with nothing in the logs to say why. 97 matches
+    # perception_dinosaur.yaml; keep the two in sync.
+    #
+    # occupancy.py's 65 default exists so off-road and obstacles look distinct
+    # in RViz. That trade-off is fine for a grid nobody plans on -- it is not
+    # fine for one feeding Nav2. Use /perception/known and the RGB colorizer
+    # (deploy/costmap_rgb_node.py) to tell the two apart visually instead.
+    offroad_cost: 97

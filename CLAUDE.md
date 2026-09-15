@@ -20,7 +20,7 @@ the **`feature/alexander`** branch:
   Nav2-compatible costmap. Multi-camera BEV fusion, HSV or TwinLiteNet+ road
   segmentation, classical or YOLOv8 obstacles (footprint-strip projection,
   .pt or TensorRT .engine), temporal confidence filter, sensor-data QoS,
-  staleness guards. 39 offline tests.
+  staleness guards. Offline test suite.
 - `ros2_ws/src/perception_costmap/README.md` — build/run/Nav2 wiring.
 - `ros2_ws/src/perception_costmap/DESIGN.md` — architecture + dataflow.
 - `ros2_ws/src/perception_costmap/DEPLOY.md` — Jetson bring-up checklist.
@@ -28,14 +28,22 @@ the **`feature/alexander`** branch:
   carla_feed (CARLA 0.9.16 → ROS2 topics, runs on the x86 sim box only),
   eval_road_iou (segmenter accuracy vs CARLA semantic ground truth),
   export_trt (run ON the Jetson), bench_perception (per-stage timing).
-- `docs/plans/2026-07-01-perception-v2-sim-to-real.md` — the implementation
-  plan this was built from (all 10 tasks complete).
+- ~~`docs/plans/2026-07-01-perception-v2-sim-to-real.md`~~ — the implementation
+  plan this was built from (all 10 tasks complete). **Deleted in `e0cf788`
+  (2026-08-05);** read it with `git show e0cf788^:docs/plans/2026-07-01-perception-v2-sim-to-real.md`.
+  The only plan still in the tree is
+  `ros2_ws/docs/superpowers/plans/2026-07-16-perception-accuracy-prompt-and-plan.md`.
 - `driving_seg/` (repo root) — multi-model area-highlighting segmentation
   (people/vehicles/signs/road/lanes/cones/white lines, no bounding boxes);
   standalone package with its own README/PROMPT.md, trained cone model
   committed. Real, tested work (2026-07-07).
-- `perception/` (repo root) — Adam Castillo's original prototype scripts the
-  package was factored from. Keep author credits intact.
+- ~~`perception/`~~ (repo root) — Adam Castillo's original prototype scripts
+  the package was factored from. **Deleted in `060141f` (2026-08-05).** The
+  code is still in history (`git show 060141f^:perception/costmap.py`) and the
+  credit survives in `CONTRIBUTORS.md` / `.mailmap`, but every doc reference to
+  the directory is now dangling. Docstrings in `segmentation.py` and
+  `obstacles.py` still cite it as the source they were factored from — that
+  attribution is accurate and should stay.
 
 ## What is NOT real (do not build on these)
 
@@ -51,7 +59,7 @@ the **`feature/alexander`** branch:
 ## How to verify a checkout (no ROS needed)
 
     cd ros2_ws/src/perception_costmap
-    PYTHONPATH=.:$PYTHONPATH python3 -m pytest test -q     # 39 passed
+    PYTHONPATH=.:$PYTHONPATH python3 -m pytest test -q     # all green
     python3 tools/bench_perception.py --frames 20          # stage table
 
 With ROS2 (Humble target; Jazzy works for build/import):
