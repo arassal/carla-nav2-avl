@@ -373,6 +373,12 @@ test was verified to fail on an injected typo.
 confirmed lethal cells and the costmap kept publishing
 (`logs/results/2026-09-14_costmap-node-live-run.md`).
 
+**Tested on the car** (2026-09-15, real ZED cameras and TensorRT models):
+`success=True` with the pipeline counters restarting from zero, and
+`deploy/fresh_run.sh --perception` exited 0
+(`logs/results/2026-09-15_car-test-dinosaur.md`, PR #1). Still to do on the car:
+a reset with an obstacle in view, so it reports N > 0 lethal cells cleared.
+
 ## Verified working (so nobody re-checks)
 
 - `git clone` + `git checkout copy` — clean, no LFS, no submodules.
