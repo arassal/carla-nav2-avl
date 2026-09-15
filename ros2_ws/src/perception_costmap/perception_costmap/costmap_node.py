@@ -65,6 +65,7 @@ class CameraSource:
                                  d("camera_info_topic", "/camera/%s/camera_info" % name),
                                  self._on_info, qos_profile_sensor_data)
         depth_topic = d("depth_topic", "")
+        self.depth_expected = bool(depth_topic)
         if depth_topic:
             node.create_subscription(
                 Image, depth_topic, self._on_depth, qos_profile_sensor_data)
@@ -667,8 +668,13 @@ class CostmapNode(Node):
                     cam.stamp, self.depth_sync)
                 confidence_sample = cam.confidence_buffer.nearest(
                     cam.stamp, self.depth_sync)
+                # Only wait for depth a camera actually publishes. Without
+                # this, a camera with no depth_topic whose frame rate matched
+                # publish_rate landed every frame inside depth_wait and
+                # detection starved (13 runs in 10 s instead of ~100).
                 waiting_for_zed = (
-                    now - cam.stamp < self.depth_wait
+                    cam.depth_expected
+                    and now - cam.stamp < self.depth_wait
                     and (depth_sample is None
                          or (cam.confidence_expected
                              and confidence_sample is None)))
