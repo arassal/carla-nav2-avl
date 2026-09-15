@@ -360,3 +360,96 @@ test was verified to fail on an injected typo. A live call on the car is in
 
 Not yet attempted here: `colcon build` (this box is ROS 2 **Jazzy**, the
 project targets **Humble**), CARLA smoke test, anything on the Jetson.
+
+---
+
+## Camera launch and performance (2026-09-14)
+
+Found while building `launch/perception_stack.launch.py`. Profile evidence:
+`logs/results/2026-09-14_perception-profile-and-zed-audit.md`.
+
+### C8 — left and right ZED serials are swapped between launch paths — OPEN
+
+| camera | `deploy/full_stack_restart.sh`, `deploy/clean_camera_restart.sh` (boot + recovery) | `how_dinosaur_drives/lidar/sensors.launch.py` (from IGVC_ROS2) |
+|---|---|---|
+| front | 42569280 | 42569280 |
+| left  | **49910017** | **43779087** |
+| right | **43779087** | **49910017** |
+
+Start the cameras through the other path and `/zed_left` publishes the right
+camera's images: side obstacles land on the wrong side of the costmap, and
+every yaw calibration is 180° off. `perception_stack.launch.py` follows the
+boot scripts, since the 2026-07-09 calibration was done on that path.
+`sensors.launch.py` even carries `TODO: confirm right-camera serial`. **Needs
+someone at the car** to cover one camera and see which topic goes dark.
+
+### C9 — the car subscribes to a confidence map the ZED never advertises — OPEN (fixed in the lean profile)
+
+`perception_dinosaur.yaml` sets `confidence_topic` for all three cameras, but
+zed-ros2-wrapper 5.2 only creates `confidence/confidence_map` when
+`depth.publish_depth_confidence: true` (default false), and the avros_bringup
+camera configs on GitHub never set it. If the car's installed configs match
+GitHub, every frame waits the full `depth_wait_sec` (80 ms) for a map that
+never arrives, confidence filtering is silently off, and `/diagnostics` warns
+"no confidence map". The `config/zed_perception_*.yaml` profiles enable it.
+**Verify on the car:** `ros2 topic list | grep confidence`.
+
+### P1 — ZED drivers compute things nothing reads — FIXED in `config/zed_perception_*.yaml`
+
+The avros_bringup camera configs were tuned for an older consumer, the
+kiwicampus semantic layer in Nav2, which read ZED point clouds. Nothing on the
+current stack reads a ZED point cloud (`deploy/depth_obstacle_node.py` does,
+but the boot script doesn't start it), yet every camera still runs:
+
+- **positional tracking**, kept on "because the cloud needs it". In wrapper
+  5.2 it also forces depth to be computed on every grab, with or without
+  subscribers, and the Xsens/EKF already own localization;
+- depth stabilization (temporal smoothing, requires positional tracking);
+- depth at the 15 fps grab rate, when the front publishes at 8;
+- side cameras publishing 15 Hz, when perception runs YOLO on each side
+  camera every 0.4 s. The node still converts every frame through cv_bridge.
+
+The lean profiles publish RGB, depth and confidence only; turn off point
+clouds, positional tracking, IMU and odometry; and cap processing at 8 fps.
+All 94 keys were checked against wrapper v5.2.2's parameter tree. **Not yet
+run on the car.** `depth_stabilization: 0` is the one real tradeoff: if depth
+gets too noisy, set 1 and turn positional tracking back on.
+
+### P2 — the costmap node's main thread nearly fills its 100 ms budget — OPEN
+
+Profiled with 3 cameras at the car's rates (front 8 Hz, sides 15 Hz,
+960x600), the car's config minus the TensorRT models, laptop CPU: the node
+needs **165% of a core**, and `_tick` averages **38 ms of its 100 ms budget**.
+The Orin's CPU cores are several times slower, which lines up with the ~5 Hz
+`DEPLOY.md` measured. Where it goes, per tick:
+
+| work | ms | share | why |
+|---|---|---|---|
+| HSV road segmentation, 3 cameras | 21.5 | 56% | runs on every camera **every tick**, even when the frame hasn't changed; `np.isin` over the label image alone is 3.2 ms |
+| white-line mask, 3 cameras | 5.2 | 14% | same: every camera, every tick |
+| `build_cost_array` | 4.5 | 12% | `cv2.inpaint` for blind-spot infill is ~2 ms |
+| grid reprojection (motion compensation) | 3.8 | 10% | every class grid of every detector result, plus all 4 temporal filters, reprojected per tick |
+
+Cheapest wins, none done yet: skip segmentation and the white-line mask when
+a camera's stamp hasn't changed; replace `np.isin` with a lookup-table index;
+reproject one stacked array instead of five separate grids.
+
+### P3 — `DEPLOY.md` still blames TwinLiteNet, which the car no longer runs — OPEN
+
+`DEPLOY.md` §6 and `full_stack_restart.sh` ("TRT engine + TwinLiteNet") name
+TwinLiteNet's 73.7 ms as the bottleneck, but `perception_dinosaur.yaml` now sets
+`segmentation_method: hsv`. The real bottleneck is P2. The measurements
+should be redone on the car.
+
+### P4 — the boot service starts viewers nobody may be watching — OPEN
+
+`percept-stack.service` → `full_stack_restart.sh` starts, on every boot:
+`viz_node` (subscribes to all 3 RGB streams and renders a BEV composite),
+`costmap_rgb_node` (a 40,000-point colored cloud), `web_video_server`, an
+HTTP server, and **RViz with software OpenGL (llvmpipe)** showing the costmap
+plus 3 camera panels, whenever a NoMachine display exists.
+`auto_drive.launch.py` opens a second software-rendered RViz. RViz on
+llvmpipe renders on the CPU the controller and perception share, and its
+camera panels keep all three RGB streams flowing. `perception_stack.launch.py`
+starts none of these; run them only while someone is watching. The boot
+service itself is unchanged until the lean launch has run on the car.
