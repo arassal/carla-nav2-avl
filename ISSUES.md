@@ -383,16 +383,21 @@ boot scripts, since the 2026-07-09 calibration was done on that path.
 `sensors.launch.py` even carries `TODO: confirm right-camera serial`. **Needs
 someone at the car** to cover one camera and see which topic goes dark.
 
-### C9 — the car subscribes to a confidence map the ZED never advertises — OPEN (fixed in the lean profile)
+### C9 — the car subscribes to a confidence map the ZED never advertises — NOT A BUG on the car (checked 2026-09-15)
 
-`perception_dinosaur.yaml` sets `confidence_topic` for all three cameras, but
+Suspected from the GitHub copy of avros_bringup's camera configs:
 zed-ros2-wrapper 5.2 only creates `confidence/confidence_map` when
-`depth.publish_depth_confidence: true` (default false), and the avros_bringup
-camera configs on GitHub never set it. If the car's installed configs match
-GitHub, every frame waits the full `depth_wait_sec` (80 ms) for a map that
-never arrives, confidence filtering is silently off, and `/diagnostics` warns
-"no confidence map". The `config/zed_perception_*.yaml` profiles enable it.
-**Verify on the car:** `ros2 topic list | grep confidence`.
+`depth.publish_depth_confidence: true` (default false), and those configs never
+set it, while `perception_dinosaur.yaml` subscribes to it.
+
+**On the car it's fine.** The installed configs
+(`~/IGVC/install/avros_bringup/share/avros_bringup/config/zed_*.yaml`) set
+`publish_depth_confidence: true`, and all three `confidence_map` topics are
+advertised (`logs/results/2026-09-15_car-test-dinosaur.md`). The GitHub copy of
+IGVC_ROS2 (last pushed 2026-06-01) is behind the car. The lean profiles keep
+the setting on explicitly, so they don't depend on the wrapper default.
+
+Lesson: audit the files installed on the car, not the GitHub copy.
 
 ### P1 — ZED drivers compute things nothing reads — FIXED in `config/zed_perception_*.yaml`
 
@@ -411,6 +416,11 @@ but the boot script doesn't start it), yet every camera still runs:
 
 The lean profiles publish RGB, depth and confidence only; turn off point
 clouds, positional tracking, IMU and odometry; and cap processing at 8 fps.
+**Confirmed on the car (2026-09-15):** the installed configs set
+`pos_tracking_enabled: true`, and each camera advertises 27 topics including
+`point_cloud` and `odom`/`pose`. Whether turning them off frees measurable CPU/GPU
+is what the lean-launch car test (`DEPLOY.md` §7 step 3) measures.
+
 All 94 keys were checked against wrapper v5.2.2's parameter tree. **Not yet
 run on the car.** `depth_stabilization: 0` is the one real tradeoff: if depth
 gets too noisy, set 1 and turn positional tracking back on.

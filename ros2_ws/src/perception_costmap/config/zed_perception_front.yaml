@@ -46,9 +46,9 @@
       # too noisy, set 1 and re-enable pos_tracking below.
       depth_stabilization: 0
       publish_depth_map: true           # depth/depth_registered
-      publish_depth_confidence: true    # confidence/confidence_map -- default false in the
-                                        # wrapper, and the node subscribes to it. Without it every
-                                        # frame waited depth_wait_sec for a map that never came.
+      publish_depth_confidence: true    # confidence/confidence_map -- the node subscribes to it.
+                                        # The wrapper default is false; the car's installed
+                                        # configs set it too. Keep it explicit.
       publish_point_cloud: false
       publish_depth_info: false
       publish_disparity: false

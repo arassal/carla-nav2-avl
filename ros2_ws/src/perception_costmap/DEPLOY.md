@@ -143,7 +143,7 @@ as in `deploy/full_stack_restart.sh`.
 ```bash
 ros2 topic hz /perception/costmap            # costmap rate
 tegrastats --interval 1000                   # CPU/GPU load, ~30 s
-ros2 topic list | grep confidence            # ISSUES.md C9: empty = never advertised
+ros2 topic list | grep confidence            # expect 3 confidence_map topics (ISSUES.md C9)
 ```
 
 **1. Map click (PR #1).** Start autodrive the usual way (`auto_drive.launch.py`

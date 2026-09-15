@@ -38,6 +38,8 @@ cone TensorRT on the Jetson GPU, the ZED drivers themselves.
   `confidence/confidence_map` publisher is only created when it is true
   (`zed_camera_component_video_depth.cpp`). avros_bringup's zed_*.yaml on
   GitHub never set it, while `perception_dinosaur.yaml` subscribes to it.
+  **Update 2026-09-15:** the configs installed on the car do set it, and all
+  three confidence maps are advertised there. The GitHub copy is stale.
 - `isDepthRequired()` returns true when any depth topic has subscribers *or*
   positional tracking needs depth, so with `pos_tracking_enabled: true` depth
   runs on every grab with zero subscribers.
