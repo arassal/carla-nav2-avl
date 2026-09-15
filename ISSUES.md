@@ -13,103 +13,42 @@ Evidence for each entry goes in `logs/` — see `logs/README.md`.
 
 ## Blockers
 
-### B1 — `costmap_node.py` imports four modules that do not exist — OPEN
+### B1 — `costmap_node.py` imports four modules that do not exist — FIXED by Alexander in `0fedca3`
 
-The main ROS node cannot be imported, so it cannot start.
+`costmap_node.py` imported `detection_schedule`, `inference_worker`,
+`sample_buffer` and `health`, which were not committed, so a fresh clone of
+`copy` could not import the node and `perception.launch.py` could not start.
+The offline suite stayed green because no test imports `costmap_node`.
 
-`ros2_ws/src/perception_costmap/perception_costmap/costmap_node.py:32-35`
+They existed untracked on Alexander's machine (`0e16bc3` was a
+`git commit -a`, which skips new files). He committed them, with tests, in
+`0fedca3` (2026-09-14). Verified on this branch: the node imports under ROS 2
+Jazzy.
 
-```python
-from .detection_schedule import DetectionScheduler
-from .inference_worker import LatestTaskWorker
-from .sample_buffer import PoseBuffer, TimestampedBuffer
-from .health import camera_health
-```
+### B2 — autodrive click always rejected: the Nav2 cloud bridge cannot import — FIXED by `0fedca3`
 
-None of `detection_schedule.py`, `inference_worker.py`, `sample_buffer.py`,
-`health.py` exist in the package. They are not in any commit on any branch:
-
-```
-$ git log --all --oneline -- '*perception_costmap/sample_buffer.py'
-(no output — same for the other three)
-```
-
-Reproduce:
-
-```
-$ source /opt/ros/jazzy/setup.bash
-$ cd ros2_ws/src/perception_costmap && PYTHONPATH=. python3 -c "import perception_costmap.costmap_node"
-ModuleNotFoundError: No module named 'perception_costmap.detection_schedule'
-```
-
-Consequences:
-- `setup.py`'s console script `costmap_node = perception_costmap.costmap_node:main`
-  is dead, so `ros2 launch perception_costmap perception.launch.py` fails.
-- Everything in `REPRODUCE.md` step 7 and `DEPLOY.md` §5 is unreachable.
-- **The 59 offline tests still pass**, because not one of them imports
-  `costmap_node`. The suite covers only the ROS-free helper modules. Green
-  tests are not evidence the node runs.
-
-Symbols actually used (so we know the shape of what is missing):
-
-| symbol | used at | needs to provide |
-|---|---|---|
-| `TimestampedBuffer(maxlen=)` | `costmap_node.py:55,56` | `.add(stamp, value)`, `.nearest(stamp, tol) -> (stamp, value) \| None`, `.samples` |
-| `DetectionScheduler(primary=, secondary_stride=)` | `:335,338` | `.select(names) -> list[str]` |
-| `PoseBuffer(maxlen=)` | `:372` | `.add(stamp, pose)`, `.interpolate(stamp, tol) -> (x,y,yaw) \| None`, `.samples` |
-| `LatestTaskWorker(fn)` | `:398` | `.submit(task)`, `.take_latest()`, `.take_error()`, `.close(timeout=)`, `.submitted/.replaced/.completed` |
-| `camera_health(...)` | `:802` | `(image_age, depth_age, confidence_age, stale, conf_expected) -> (level:int, message:str)` |
-
-Ask Alexander whether these exist uncommitted on his machine before writing
-replacements — the README "Dinosaur accuracy upgrade (2026-09-03)" section
-describes this exact worker/scheduler design as done and running on the car,
-so the files probably exist and simply were never `git add`ed.
-
-**Do not start here without asking.** Reimplementing from scratch risks
-throwing away working, on-car-validated code.
-
----
-
-### B2 — autodrive click always rejected: the Nav2 cloud bridge cannot import — FIXED (this branch)
-
-**This is the reported "click a point, says Nav2 bridge not connected" bug.**
+**This was the reported "click a point, says Nav2 bridge not connected" bug.**
 
 `deploy/costmap_to_cloud.py:31` imported `perception_costmap.costmap_cloud`,
-which did not exist in any commit. The bridge died on import, so
+which was also uncommitted. The bridge died on import, so
 `/perception/costmap_cloud` was never published, so `campus_navigator.py`'s
 preflight (`:296-297`) saw `_cloud_t == 0.0` and refused every destination
 click with *"computer-vision Nav2 bridge is stale."*
-
 `auto_drive.launch.py:137-138` respawns it every 2 s, so it crash-looped
 invisibly rather than failing loudly.
 
-Fixed here: wrote `perception_costmap/costmap_cloud.py` (`raycast_costmap`) to
-the contract the caller and its comments specify — one endpoint per bearing,
-nearest occupied cell only, never the occlusion shadow behind it. 9 offline
-tests. Verified end-to-end on the laptop at 10 Hz with a new
-`tools/fake_costmap_publisher.py` fixture.
+`0fedca3` commits `costmap_cloud.py`. Verified on this branch with Alexander's
+module: `deploy/costmap_to_cloud.py` fed by `tools/fake_costmap_publisher.py`
+publishes `/perception/costmap_cloud` at 9.97 Hz, 401 endpoints per cloud.
+(An earlier version of this branch carried a from-scratch `costmap_cloud.py`;
+it was dropped in favour of his, which has the same signature.)
 
-Full trace and evidence:
-`logs/results/2026-09-10_autodrive-click-rejection-rootcause.md`.
+Full trace: `logs/results/2026-09-10_autodrive-click-rejection-rootcause.md`.
 
-**Reconcile with Alexander before merging** — same caveat as B1. If he has a
-`costmap_cloud.py` on the car, his is the one that has actually driven; keep
-the tests either way.
+### B3 — `eval_road_iou.py` imports a module that does not exist — FIXED by `0fedca3`
 
-### B3 — `eval_road_iou.py` imports a module that does not exist — OPEN
-
-`tools/eval_road_iou.py:23`:
-
-```python
-from perception_costmap.evaluation import binary_metrics
-```
-
-`perception_costmap/evaluation.py` is not in the tree or in any commit. This is
-the tool `README.md`'s "Still needs field data" section tells you to run to
-decide whether TwinLiteNet may be promoted over HSV — the stated gate on that
-decision cannot currently be executed.
-
-Same missing-file family as B1/B2: six modules referenced, never committed.
+`tools/eval_road_iou.py:23` imports `perception_costmap.evaluation`, which was
+uncommitted. Committed in `0fedca3` with `test_evaluation.py`.
 
 ---
 
@@ -276,41 +215,13 @@ Claimed: **39** at `README.md:34`, `README.md:65`,
 `ros2_ws/src/perception_costmap/README.md:133` — which contradicts the 39 in
 the Tests section of that same file.
 
-### D2 — five documented tools do not exist — RECLASSIFIED: same missing-files bug as B1
+### D2 — five documented tools do not exist — FIXED by `0fedca3`
 
-The Tools table in `ros2_ws/src/perception_costmap/README.md` lists these, and
-the "Still needs field data" section tells you to run two of them:
-
-- `tools/eval_ipm_calibration.py`
-- `tools/benchmark_models.py`
-- `tools/measure_zed_sync.py`
-- `tools/analyze_zed_depth.py`
-- `deploy/record_perception_bag.sh`
-
-`tools/` actually contains: `bench_perception.py`, `carla_feed.py`,
-`eval_road_iou.py`, `export_trt.py`, `ipm_overlay.py`,
-`shadow_robustness_test.py`, `viz_node.py`.
-
-**This is not a docs bug — it is B1 again.** All five were documented by
-`0e16bc3` (2026-09-08), the same commit that added the `costmap_cloud` and
-`evaluation` imports without their modules, and which touched only
-already-tracked files. **The missing-file count is 11, not 6:**
-
-    perception_costmap/detection_schedule.py     (breaks costmap_node)
-    perception_costmap/inference_worker.py       (breaks costmap_node)
-    perception_costmap/sample_buffer.py          (breaks costmap_node)
-    perception_costmap/health.py                 (breaks costmap_node)
-    perception_costmap/costmap_cloud.py          (broke the bridge; replaced here)
-    perception_costmap/evaluation.py             (breaks eval_road_iou.py)
-    tools/eval_ipm_calibration.py
-    tools/benchmark_models.py
-    tools/measure_zed_sync.py
-    tools/analyze_zed_depth.py
-    deploy/record_perception_bag.sh
-
-The README table entries are now marked **(NOT IN REPO)** rather than deleted —
-deleting them would erase the only record that these tools were written. Ask
-Alexander to search for all eleven, not just the six that break imports.
+The package README's Tools table listed `tools/eval_ipm_calibration.py`,
+`tools/benchmark_models.py`, `tools/measure_zed_sync.py`,
+`tools/analyze_zed_depth.py` and `deploy/record_perception_bag.sh`, none of
+which were committed. Same cause as B1: eleven files in all were untracked on
+Alexander's machine. All are in `0fedca3`.
 
 ### D3 — `perception/` directory is referenced but absent — FIXED (this branch)
 
@@ -409,25 +320,22 @@ Added:
 - `TemporalObstacleFilter.reset()` (`temporal.py`) — ROS-free, returns the
   count of cells that were reporting lethal so a caller can say what it threw
   away instead of claiming success blindly. 3 tests.
-- `util.clear_sample_buffer()` — best-effort, because `sample_buffer.py` is
-  missing (B1) and its API is only inferable from call sites. Handles both
-  plausible shapes and reports failure rather than guessing. 2 tests.
+- `util.clear_sample_buffer()` — empties a buffer's `.samples` deque
+  (`sample_buffer`'s classes have no `clear()` of their own). 2 tests.
 - `/perception/reset` (`std_srvs/Trigger`) in `costmap_node.py` — 58 lines,
-  self-contained, so it re-applies easily if Alexander's `costmap_node.py`
-  supersedes this one.
+  self-contained.
 - `deploy/fresh_run.sh` — calls the reset plus both Nav2 costmap clears,
   reports per-step status, and exits non-zero telling you not to start a scored
   run. Verified in all three branches: service missing, service OK, and service
   answering `success=False` (which `ros2 service call` reports with exit code
   0 — the payload has to be checked, not the exit status).
 
-**Caveat:** the handler itself is not runtime-tested, because `costmap_node.py`
-still cannot be imported (B1). It is covered by 5 static AST tests instead, the
-important one asserting that every attribute the handler assigns already exists
-in `__init__` — a typo there would silently create a new attribute and leave
-the real one stale, which is the actual failure mode of attribute-based reset
-code. That test was verified to fail on an injected typo. Replace these with a
-live service call once B1 lands.
+**Caveat:** the handler is covered by 5 static AST tests, the important one
+asserting that every attribute the handler assigns already exists in
+`__init__` — a typo there would silently create a new attribute and leave the
+real one stale, the actual failure mode of attribute-based reset code. That
+test was verified to fail on an injected typo. A live call on the car is in
+`DEPLOY.md`'s test checklist once that lands.
 
 ## Verified working (so nobody re-checks)
 
@@ -437,9 +345,10 @@ live service call once B1 lands.
   promises.
 - `driving_seg` offline suite: **7 passed**, 0.09 s, with
   `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`.
-- After the B2 fix the `perception_costmap` suite is **68 passed** (59 + 9 new
-  `test_costmap_cloud.py`), and `deploy/costmap_to_cloud.py` runs, consuming a
-  synthetic costmap and publishing `/perception/costmap_cloud` at 10 Hz.
+- Rebuilt on Alexander's `0fedca3` (2026-09-14): `perception_costmap` suite
+  **90 passed** (his 78 + 12 from this branch: C1, reset, temporal, util), the
+  node imports under ROS 2 Jazzy, and the bridge publishes
+  `/perception/costmap_cloud` at 9.97 Hz with his `costmap_cloud.py`.
 - Every relative import in `driving_seg/driving_seg/` resolves.
 - **The campus map is fine — it is not the cause of the click rejection.**
   `graph_validation.py` on `cpp_campus_graph.geojson`: 9112 nodes, 17492

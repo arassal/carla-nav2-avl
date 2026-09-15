@@ -47,6 +47,10 @@ job: it is why the reason was visible at all this time.
 
 ## Fix
 
+> **Update 2026-09-14:** Alexander committed his own `costmap_cloud.py` in
+> `0fedca3` (it had been untracked on his machine). The replacement described
+> below was dropped in favour of his; re-verified with his module at 9.97 Hz.
+
 Wrote `perception_costmap/costmap_cloud.py` implementing `raycast_costmap` to
 the contract its caller and the surrounding comments specify: one endpoint per
 bearing, nearest occupied cell only (never the occlusion shadow behind it), far

@@ -25,7 +25,7 @@ $ cd ros2_ws/src/perception_costmap && PYTHONPATH=.:$PYTHONPATH \
 ModuleNotFoundError: No module named 'perception_costmap.detection_schedule'
 ```
 
-Four modules referenced by `costmap_node.py` were never committed — `ISSUES.md` B1.
+Four modules referenced by `costmap_node.py` were never committed — `ISSUES.md` B1 (committed later by Alexander in `0fedca3`).
 
 **The headline: 59 green tests and a node that cannot start are both true at
 once.** The suite covers only the ROS-free helpers; nothing imports

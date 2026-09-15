@@ -1,13 +1,10 @@
 """Static checks on the /perception/reset handler.
 
-`costmap_node.py` cannot be imported yet -- it references four modules that
-were never committed (ISSUES.md B1) -- so the handler cannot be exercised at
-runtime here. These read the source instead, which is enough to catch the
-failure mode that actually threatens attribute-based reset code: assigning a
-name that does not exist. Python creates it silently, the real attribute keeps
-its stale value, and the reset looks like it worked.
-
-Replace these with a live service call once B1 lands.
+The offline suite runs without ROS, so the node cannot be started here.
+These read the source instead, which is enough to catch the failure mode that
+actually threatens attribute-based reset code: assigning a name that does not
+exist. Python creates it silently, the real attribute keeps its stale value,
+and the reset looks like it worked. A live call is part of the car test.
 """
 
 import ast
