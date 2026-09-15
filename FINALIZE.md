@@ -135,7 +135,7 @@ On grass with painted lines + cones (the real course setup):
   `numpy<2`. Engines are built ON the device they run on.
 - Verify visual/geometry changes with ASYMMETRIC fixtures (mirror-bug
   class); verify packaging with a FRESH CLONE (three bugs caught that way).
-- Repo conventions: `CLAUDE.md` binds — Python 3.8 syntax, ROS-free core
+- Repo conventions: `CONTRIBUTING.md` binds — Python 3.8 syntax, ROS-free core
   modules, `perception_costmap: <what>` commit style, no AI trailers.
 
 ## Definition of DONE for the whole project
