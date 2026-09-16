@@ -14,6 +14,8 @@ setup(
         ('share/' + package_name, ['package.xml']),
         (os.path.join('share', package_name, 'config'), glob('config/*.yaml')),
         (os.path.join('share', package_name, 'launch'), glob('launch/*.py')),
+        # operator RViz configs, so launch files can find them by package share
+        (os.path.join('share', package_name, 'rviz'), glob('deploy/*.rviz')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,

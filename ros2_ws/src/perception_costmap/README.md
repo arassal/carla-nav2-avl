@@ -48,8 +48,12 @@ ros2 launch perception_costmap perception_stack.launch.py --show-args    # every
 ```
 
 Cameras use the lean `config/zed_perception_*.yaml` profiles: RGB, depth and
-confidence only, no point cloud or positional tracking. It does not start viz,
-streaming or RViz. See ISSUES.md P1-P4 for why.
+confidence only, no point cloud or positional tracking. It does not start viz
+or streaming. See ISSUES.md P1-P4 for why.
+
+To watch it, add `rviz:=true` (costmap + camera panels, CPU-rendered). Over
+SSH set a display first -- `export DISPLAY=:1001`, see `ls /tmp/.X11-unix/` --
+or run it from a terminal inside the NoMachine desktop.
 
 **Just the node** (CARLA, or with sensors already up):
 

@@ -13,8 +13,18 @@ cameras you ask for with lean settings, and the costmap node.
         cameras:=left sensors:=false costmap:=false
 
 What it deliberately does NOT start, compared with
-deploy/full_stack_restart.sh: EKF, viz_node, costmap_rgb, web_video_server,
-the dashboard server and RViz. Run those separately when you want to watch.
+deploy/full_stack_restart.sh: EKF, viz_node, costmap_rgb, web_video_server
+and the dashboard server. Run those separately when you want to watch.
+
+RViz is opt-in: `rviz:=true` opens deploy/perception_live.rviz -- the costmap
+straight off /perception/costmap plus the camera panels, so it needs nothing
+but this launch. (deploy/costmap_cams.rviz draws /viz/costmap_rgb instead,
+which needs deploy/costmap_rgb_node.py running; pass it with rviz_config:= if
+you want that view.) RViz renders on the CPU over NoMachine (~45% of a core),
+so leave it off while measuring.
+
+Over SSH there is no display: run it from a terminal inside the NoMachine
+desktop, or `export DISPLAY=:1001` (see `ls /tmp/.X11-unix/`) first.
 
 Cameras use config/zed_perception_<name>.yaml: RGB, depth and the confidence
 map only -- no point cloud, no positional tracking, no IMU, processing capped
@@ -159,6 +169,19 @@ def _setup(context):
             actions.append(TimerAction(period=start_after, actions=[camera])
                            if start_after > 0 else camera)
 
+    if _bool(context, "rviz"):
+        # NoMachine's virtual display has no usable hardware GL context: rviz2
+        # segfaults with "failed to create drawable" unless Mesa's software
+        # rasterizer is forced. Same treatment as auto_drive.launch.py.
+        software_gl = {"LIBGL_ALWAYS_SOFTWARE": "1",
+                       "__GLX_VENDOR_LIBRARY_NAME": "mesa",
+                       "GALLIUM_DRIVER": "llvmpipe",
+                       "QT_X11_NO_MITSHM": "1"} if _bool(context, "rviz_software_gl") else {}
+        actions.append(Node(
+            package="rviz2", executable="rviz2", name="rviz2_perception",
+            arguments=["-d", cfg["rviz_config"]], output="screen",
+            additional_env=software_gl))
+
     if steps["costmap"]:
         actions.append(Node(
             package="perception_costmap", executable="costmap_node",
@@ -185,6 +208,17 @@ def generate_launch_description():
         DeclareLaunchArgument("config", default_value=os.path.join(
                                   share, "config", "perception_dinosaur.yaml"),
                               description="perception_costmap params YAML."),
+        DeclareLaunchArgument("rviz", default_value="false",
+                              description="Open RViz on the costmap + camera panels. "
+                                          "CPU-rendered over NoMachine; off while measuring."),
+        DeclareLaunchArgument("rviz_config", default_value=os.path.join(
+                                  share, "rviz", "perception_live.rviz"),
+                              description="RViz config (installed from deploy/*.rviz). The default "
+                                          "reads /perception/costmap directly; costmap_cams.rviz "
+                                          "needs costmap_rgb_node running."),
+        DeclareLaunchArgument("rviz_software_gl", default_value="true",
+                              description="Force Mesa software GL. Needed on NoMachine's "
+                                          "virtual display; set false on a real GPU display."),
         DeclareLaunchArgument("reuse_running", default_value="true",
                               description="Skip anything already running instead of starting a second copy."),
         DeclareLaunchArgument("ros_domain_id", default_value="",
