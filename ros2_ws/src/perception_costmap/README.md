@@ -51,9 +51,18 @@ Cameras use the lean `config/zed_perception_*.yaml` profiles: RGB, depth and
 confidence only, no point cloud or positional tracking. It does not start viz
 or streaming. See ISSUES.md P1-P4 for why.
 
-To watch it, add `rviz:=true` (costmap + camera panels, CPU-rendered). Over
-SSH set a display first -- `export DISPLAY=:1001`, see `ls /tmp/.X11-unix/` --
-or run it from a terminal inside the NoMachine desktop.
+To watch it, add `rviz:=true`: that starts `costmap_rgb_node` (the colorized
+`/viz/costmap_rgb` cloud, ~10% of a core) and opens RViz on it plus the camera
+panels, the same view the boot stack shows. `viz:=true` starts just the
+colorizer; `viz:=false` with `rviz:=true` opens RViz without it.
+
+Don't point RViz's Map display at `/perception/costmap` instead: `unknown_cost`
+is 25 on the car, so blind cells arrive as a normal low cost and a Map display
+paints them as drivable. costmap_rgb_node uses `/perception/known` to tell them
+apart.
+
+Over SSH set a display first -- `export DISPLAY=:1001`, see `ls /tmp/.X11-unix/`
+-- or run it from a terminal inside the NoMachine desktop.
 
 **Just the node** (CARLA, or with sensors already up):
 

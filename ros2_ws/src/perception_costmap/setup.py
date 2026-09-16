@@ -16,6 +16,8 @@ setup(
         (os.path.join('share', package_name, 'launch'), glob('launch/*.py')),
         # operator RViz configs, so launch files can find them by package share
         (os.path.join('share', package_name, 'rviz'), glob('deploy/*.rviz')),
+        # costmap_rgb_node: the colorizer RViz actually displays (see launch)
+        (os.path.join('share', package_name, 'deploy'), ['deploy/costmap_rgb_node.py']),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
