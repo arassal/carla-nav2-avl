@@ -52,9 +52,21 @@ confidence only, no point cloud or positional tracking. It does not start viz
 or streaming. See ISSUES.md P1-P4 for why.
 
 To watch it, add `rviz:=true`: that starts `costmap_rgb_node` (the colorized
-`/viz/costmap_rgb` cloud, ~10% of a core) and opens RViz on it plus the camera
-panels, the same view the boot stack shows. `viz:=true` starts just the
-colorizer; `viz:=false` with `rviz:=true` opens RViz without it.
+`/viz/costmap_rgb` cloud, ~10% of a core) and, **after the last camera**, opens
+RViz on `deploy/perception_lean.rviz` -- the costmap as flat squares in
+`base_link`. `viz:=true` starts just the colorizer; `viz:=false` with
+`rviz:=true` opens RViz without it.
+
+Two things that cost an afternoon on the car (2026-09-16):
+
+- **RViz must start after the cameras.** Opening a ZED while RViz already holds
+  the NoMachine display's GL context killed the camera with an Argus
+  `BadParameter` on an EGL buffer. The boot script starts RViz last for the
+  same reason; this launch now does too.
+- **Don't load a config with a RobotModel over NoMachine.** `zedx.stl` is not
+  installed, and rviz2 segfaults with "failed to create drawable" while loading
+  it. `perception_lean.rviz` leaves the model and the camera panels out;
+  `costmap_cams.rviz` (the operator view) keeps them and needs a real display.
 
 Don't point RViz's Map display at `/perception/costmap` instead: `unknown_cost`
 is 25 on the car, so blind cells arrive as a normal low cost and a Map display
