@@ -438,11 +438,14 @@ Same costmap node and cameras in both runs, only the camera YAML differs:
 About a third of a core freed on two cameras, mostly
 from publishing at 8 Hz instead of 15 and dropping the point cloud and
 positional tracking. GPU is nearly unchanged: depth still runs per grab.
-With three cameras the old profile costs **80% of a core** in camera drivers
-(front 26% at 8 Hz, left 28%, right 26% at 15 Hz) -- a camera's cost is mostly
-the point cloud and positional tracking, not its rate -- so a lean three-camera
-run should land near 45-48%. That run is still to do; the boot stack could not
-be stopped while teammates were using its topics.
+**Three cameras, measured both ways** (2026-09-16): camera drivers
+**80% -> 49% of a core (-39%)**, RAM 7362 -> 6991 MB, costmap steady at 10 Hz,
+GPU unchanged (depth still runs per grab). System CPU 36.0% -> 27.3%, but only
+~31 of those points are the cameras: the lean launch also skips viz_node,
+costmap_rgb and RViz (~0.47 core), which is its "only what perception needs"
+choice rather than a camera-config effect. A camera's cost is mostly the point
+cloud and positional tracking, not its publish rate -- the front camera cost
+26% at 8 Hz under the old profile, the same as the sides at 15 Hz.
 
 Details: `logs/results/2026-09-16_lean-vs-old-camera-profile.md`; the first,
 incomplete attempt: `logs/results/2026-09-15_lean-launch-car-attempt.md`.

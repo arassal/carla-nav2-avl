@@ -77,12 +77,30 @@ with all three cameras up (13:21, same 30 s method):
 
 **The front camera costs 26% while publishing at 8 Hz, the same as the side
 cameras at 15 Hz.** So a camera's cost is dominated by the point cloud and
-positional tracking, not the publish rate: with the same 8 Hz rate as lean,
-the old profile still pays ~26% because it also builds a cloud and tracks
-pose. Measured lean cameras cost 15-16% each, which puts a lean three-camera
-run at roughly **45-48% instead of 80%**, around a third of a core saved on
-the drivers alone. That extrapolation still needs its own run; the boot stack
-could not be stopped while teammates were using its topics.
+positional tracking, not the publish rate.
+
+## Three cameras, lean profile (14:10, 10-minute window)
+
+`perception_stack.launch.py` with all three cameras, same 30 s method:
+
+| three cameras | old configs | **lean** | change |
+|---|---|---|---|
+| camera drivers | 26 + 28 + 26 = **80%** | 17 + 16 + 16 = **49%** | **-39%** |
+| costmap_node | 108% | 110% | unchanged |
+| CPU, 12-core mean | 36.0% | **27.3%** | -8.7 points |
+| GPU mean | 57.6% | 57.3% | unchanged |
+| RAM | 7362 MB | **6991 MB** | -371 MB |
+| /perception/costmap | 10.01 Hz | **10.11 Hz** | unchanged |
+
+**Read the CPU row carefully.** The camera drivers really do drop 31 points
+(~0.31 core). The rest of the 8.7-point system difference is that the lean
+launch does not start viz_node, costmap_rgb and RViz, which together cost
+~47% (0.47 core) in the old run. That is the launch's "only what perception
+needs" choice, not a camera-config effect, and those viewers can be started
+separately whenever an operator wants them.
+
+The earlier extrapolation from the two-camera run (45-48%) matched the
+measured 49%.
 
 ## Caveats
 
