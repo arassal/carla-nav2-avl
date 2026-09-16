@@ -421,11 +421,25 @@ clouds, positional tracking, IMU and odometry; and cap processing at 8 fps.
 `point_cloud` and `odom`/`pose`. Whether turning them off frees measurable CPU/GPU
 is what the lean-launch car test (`DEPLOY.md` §7 step 3) measures.
 
-**First car attempt (2026-09-15), partial:** the ZED drivers confirmed the lean
-settings (no point cloud, no positional tracking, capped at 8 fps), but the
-cameras couldn't open after a hardware power cycle. The comparison needs a run
-after a Jetson reboot. Baseline and details:
-`logs/results/2026-09-15_lean-launch-car-attempt.md`.
+**Measured on the car 2026-09-16** (left + right; the front camera is down,
+`CAMERA STREAM FAILED TO START` since the reboot). Same costmap node and
+cameras in both runs, only the camera YAML differs:
+
+| | old configs | lean profile |
+|---|---|---|
+| both camera drivers | 50% of a core | **31%** (-38%) |
+| costmap_node | 122% | **108%** |
+| CPU, 12-core mean | 24.8% | **22.4%** |
+| GPU mean | 59.2% | 56.9% |
+| RAM | 6096 MB | **5918 MB** |
+| ZED topics per camera | 27 | **23** |
+| /perception/costmap | 9.64 Hz | **9.99 Hz** |
+
+About a third of a core freed on two cameras (~half a core with three), mostly
+from publishing at 8 Hz instead of 15 and dropping the point cloud and
+positional tracking. GPU is nearly unchanged: depth still runs per grab.
+Details: `logs/results/2026-09-16_lean-vs-old-camera-profile.md`; the first,
+incomplete attempt: `logs/results/2026-09-15_lean-launch-car-attempt.md`.
 
 All 94 keys were checked against wrapper v5.2.2's parameter tree. **Not yet
 run on the car.** `depth_stabilization: 0` is the one real tradeoff: if depth

@@ -172,7 +172,8 @@ def generate_launch_description():
     share = get_package_share_directory("perception_costmap")
     args = [
         DeclareLaunchArgument("cameras", default_value="front,left,right",
-                              description="Comma-separated cameras to run: front,left,right. '' for none."),
+                              description="Comma-separated cameras to run: front,left,right. "
+                                          "'none' for sensors and costmap only."),
         DeclareLaunchArgument("sensors", default_value="true",
                               description="Start avros_bringup sensors.launch.py (URDF TF, Xsens, Velodyne). "
                                           "The ZED driver waits for this TF."),

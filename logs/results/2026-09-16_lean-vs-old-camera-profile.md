@@ -1,0 +1,70 @@
+# Lean vs old ZED profile, measured on the car
+
+**Date:** 2026-09-16 · **Car:** dinosaur (Jetson AGX Orin, Humble, MAXN, ZED SDK 5.2.0)
+**Code:** `~/chris_test/carla-nav2-avl` = `copy` @ `0fedca3` + PRs #1-#4
+
+**Front camera excluded:** it has not opened since the reboot (`CAMERA STREAM
+FAILED TO START` on every attempt, 17+ tries, while the sensor probes fine in
+`dmesg`). Both runs therefore use **left + right only**, through
+`perception_leftright.yaml` (a copy of `perception_dinosaur.yaml` with
+`cameras: [left, right]`, `required_cameras: [left]`).
+
+## Method
+
+The only difference between the two runs is the camera YAML. Same costmap
+node (same build, same config), same two cameras, same sensors, no RViz, no
+viz_node, no streaming. 30 s sample each; per-process CPU read from `/proc`
+over the window (100% = one core); `tegrastats` at 1 s.
+
+- **OLD:** `zed_camera.launch.py` per camera with avros_bringup's
+  `zed_left.yaml` / `zed_right.yaml`, plus
+  `perception_stack.launch.py cameras:=none`.
+- **LEAN:** `perception_stack.launch.py cameras:=left,right`, which uses
+  `config/zed_perception_{left,right}.yaml`.
+
+## Results
+
+| | OLD configs | LEAN profile | change |
+|---|---|---|---|
+| RGB / depth publish rate | 15.0 / 15.1 Hz | 7.9 / 8.1 Hz | capped at 8 by design |
+| ZED topics per camera | 27 | **23** | point cloud + odom/pose gone |
+| point_cloud topics | 2 | **0** | |
+| odom/pose topics | 6 | **0** | positional tracking off |
+| zed_left driver CPU | 26% | **15%** | |
+| zed_right driver CPU | 24% | **16%** | |
+| **both camera drivers** | **50%** | **31%** | **-38%** |
+| costmap_node CPU | 122% | **108%** | -14 points (fewer frames to convert) |
+| CPU, 12-core mean | 24.8% | **22.4%** | -2.4 points (~0.3 core) |
+| GPU (GR3D) mean / max | 59.2% / 99% | 56.9% / 99% | -2.3 points |
+| RAM | 6096 MB | **5918 MB** | -178 MB |
+| /perception/costmap | 9.64 Hz | **9.99 Hz** | steadier |
+
+## Reading the numbers
+
+- The camera drivers cost **about a third less CPU**, and the savings come
+  from three things the lean profile turns off or caps: publishing at 8 Hz
+  instead of 15, no point cloud, and no positional tracking. Most of it is the
+  frame rate; perception ticks at 10 Hz and runs YOLO on a side camera every
+  0.4 s, so 15 Hz was work nothing consumed.
+- The costmap node also drops 14 points, because it converts fewer images
+  through cv_bridge.
+- GPU barely moves. Depth is still computed per grab, and the detectors
+  dominate GPU time.
+- Freed CPU is roughly a third of a core in total on this two-camera setup.
+  With three cameras it should be about half a core.
+- `/perception/costmap` stayed at 10 Hz in both runs; this is a load
+  reduction, not a throughput change.
+
+## Caveats
+
+- Two cameras, not three. The front camera is down.
+- One 30 s sample per configuration, stationary robot, indoors.
+- `depth_stabilization: 0` in the lean profile was not evaluated for quality
+  here; that needs a look at the depth image with something in view.
+- The costmap node's own load (ISSUES.md P2) is untouched by this change.
+
+## Also found
+
+`ros2 launch` rejects an empty argument value, so `cameras:=''` fails with
+"malformed launch argument". `cameras:=none` is now accepted for a
+sensors-and-costmap-only run.
