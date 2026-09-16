@@ -421,9 +421,9 @@ clouds, positional tracking, IMU and odometry; and cap processing at 8 fps.
 `point_cloud` and `odom`/`pose`. Whether turning them off frees measurable CPU/GPU
 is what the lean-launch car test (`DEPLOY.md` §7 step 3) measures.
 
-**Measured on the car 2026-09-16** (left + right; the front camera is down,
-`CAMERA STREAM FAILED TO START` since the reboot). Same costmap node and
-cameras in both runs, only the camera YAML differs:
+**Measured on the car 2026-09-16** (left + right; the front camera was held
+open by another program at the time -- see the log -- so it was left out).
+Same costmap node and cameras in both runs, only the camera YAML differs:
 
 | | old configs | lean profile |
 |---|---|---|

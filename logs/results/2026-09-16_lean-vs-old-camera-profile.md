@@ -3,9 +3,13 @@
 **Date:** 2026-09-16 · **Car:** dinosaur (Jetson AGX Orin, Humble, MAXN, ZED SDK 5.2.0)
 **Code:** `~/chris_test/carla-nav2-avl` = `copy` @ `0fedca3` + PRs #1-#4
 
-**Front camera excluded:** it has not opened since the reboot (`CAMERA STREAM
-FAILED TO START` on every attempt, 17+ tries, while the sensor probes fine in
-`dmesg`). Both runs therefore use **left + right only**, through
+**Front camera excluded, and why:** during these runs it would not open --
+`CAMERA STREAM FAILED TO START`, with nvargus-daemon reporting
+`AlreadyAllocated: Device 0 (of 1) is in use`. **Another program on the car (a
+teammate streaming that camera) held it open**; the ZED X allows one client at
+a time. Not a hardware fault: once that program stopped, the front camera came
+straight back at 8.5 Hz with no reboot and no daemon restart. Both runs
+therefore use **left + right only**, through
 `perception_leftright.yaml` (a copy of `perception_dinosaur.yaml` with
 `cameras: [left, right]`, `required_cameras: [left]`).
 
@@ -65,6 +69,11 @@ over the window (100% = one core); `tegrastats` at 1 s.
 
 ## Also found
 
-`ros2 launch` rejects an empty argument value, so `cameras:=''` fails with
-"malformed launch argument". `cameras:=none` is now accepted for a
-sensors-and-costmap-only run.
+- `ros2 launch` rejects an empty argument value, so `cameras:=''` fails with
+  "malformed launch argument". `cameras:=none` is now accepted for a
+  sensors-and-costmap-only run.
+- **`AlreadyAllocated: Device 0 (of 1) is in use` means another process owns
+  that camera**, not that the hardware is broken. The wrapper's watchdog
+  relaunch loop can never fix it -- it just retries every 5 s (55 times in one
+  case) while saying only `CAMERA STREAM FAILED TO START`. Worth teaching a
+  recovery script to read the nvargus error and name the holder instead.

@@ -81,9 +81,15 @@ and nvargus-daemon logged
   config (section 1).
 
 GMSL links are brought up at Jetson boot; a camera-side power cycle while the
-Jetson stays up needs a **Jetson reboot**. The boot stack was restarted
-afterwards (`sudo systemctl start percept-stack`); its cameras are expected to
-keep failing until that reboot.
+Jetson stays up needed a **Jetson reboot**, which did fix these cameras.
+
+> **Correction (2026-09-16).** A later, similar-looking failure had a
+> completely different cause: `CAMERA STREAM FAILED TO START` with nvargus
+> reporting `AlreadyAllocated: Device 0 (of 1) is in use`, because another
+> program on the car held that camera. The two cases are only distinguishable
+> from the nvargus error, not from the ZED message. Check for a second client
+> before blaming hardware. The duplicate serials noted above are also normal:
+> each ZED X has two imagers, so each serial is probed twice.
 
 ## Still to do
 
