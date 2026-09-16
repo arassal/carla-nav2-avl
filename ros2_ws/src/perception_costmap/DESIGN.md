@@ -64,7 +64,8 @@ lidar PointCloud2 ─► obstacles.py (ground filter + cluster) ──► obstac
 
 - **segmentation.py** — a factory selects the road-mask backend by
   `segmentation_method`: `hsv` (threshold + largest blob, reused from Adam
-  Castillo's `perception/costmap.py`) or `twinlitenet` (a TwinLiteNet+
+  Castillo's `perception/costmap.py`, a directory deleted in `060141f` —
+  still readable via `git show 060141f^:perception/costmap.py`) or `twinlitenet` (a TwinLiteNet+
   adapter, loaded once, output cropped to content extent). The learned path
   warm-loads at startup and falls back to `hsv` on any load failure, so a
   missing model/weights never takes the node down.

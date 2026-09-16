@@ -12,7 +12,7 @@ Jetson AGX Orin, ROS2 Humble). CARLA is x86-only and never runs on the Jetson
 1. **This README** — what the project is, the robot, what's real vs. stub.
 2. **`ros2_ws/src/perception_costmap/DESIGN.md`** — the architecture: how
    camera+lidar become a costmap Nav2 can plan on.
-3. **`ros2_ws/src/perception_costmap/README.md`** — build, run, and the 39
+3. **`ros2_ws/src/perception_costmap/README.md`** — build, run, and the
    offline tests (run them to confirm your checkout).
 4. **`REPRODUCE.md`** — put it on the actual car: hardware, deps, models, run.
 5. **`ros2_ws/src/perception_costmap/DEPLOY.md`** — Jetson bring-up detail.
@@ -31,10 +31,10 @@ REP-103 = ROS's x-forward/y-left frame convention.
 
 | where | what | start here |
 |---|---|---|
-| `ros2_ws/src/perception_costmap/` | camera+lidar → Nav2 costmap. Multi-camera BEV fusion, TwinLiteNet road seg, YOLOv8-TensorRT obstacles, temporal filter. 39 offline tests. | its `README.md`, then `DESIGN.md` |
+| `ros2_ws/src/perception_costmap/` | camera+lidar → Nav2 costmap. Multi-camera BEV fusion, TwinLiteNet road seg, YOLOv8-TensorRT obstacles, temporal filter. Offline test suite. | its `README.md`, then `DESIGN.md` |
 | `ros2_ws/src/perception_costmap/deploy/` | on-car ops: full-stack bringup (tmux), GMSL camera recovery, boot-time systemd unit, live phone dashboard | `deploy/README.md` |
 | `driving_seg/` | **NEW: multi-model driving segmentation — area highlighting, no bounding boxes.** People, vehicles, signs, lights, road, lanes, **cones**, white lines. 74 FPS on an RTX 5090; TensorRT path for the Jetson. | `driving_seg/README.md` and **`driving_seg/docs/CONE_DETECTION.md`** |
-| `perception/` | Adam Castillo's original prototype scripts the package grew from (credits preserved) | — |
+| ~~`perception/`~~ | Adam Castillo's original prototype scripts the package grew from. **Removed** in `060141f` (2026-08-05); recover with `git show 060141f^:perception/costmap.py`. Credit preserved in `CONTRIBUTORS.md` and `.mailmap`. | — |
 
 Not real yet (don't build on): `collision_guard`, `route_planner`,
 `sdc_common`, `controller`, `sdc_bringup` — stubs, see `CLAUDE.md`.
@@ -62,7 +62,7 @@ pretrained model knows them. The approach lives in `driving_seg/`:
 Perception costmap (no ROS needed for tests):
 
     cd ros2_ws/src/perception_costmap
-    PYTHONPATH=. python3 -m pytest test -q          # 39 passed
+    PYTHONPATH=. python3 -m pytest test -q          # all green
 
 Driving segmentation demo (any machine with a GPU):
 
