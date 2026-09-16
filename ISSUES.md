@@ -435,9 +435,15 @@ Same costmap node and cameras in both runs, only the camera YAML differs:
 | ZED topics per camera | 27 | **23** |
 | /perception/costmap | 9.64 Hz | **9.99 Hz** |
 
-About a third of a core freed on two cameras (~half a core with three), mostly
+About a third of a core freed on two cameras, mostly
 from publishing at 8 Hz instead of 15 and dropping the point cloud and
 positional tracking. GPU is nearly unchanged: depth still runs per grab.
+With three cameras the old profile costs **80% of a core** in camera drivers
+(front 26% at 8 Hz, left 28%, right 26% at 15 Hz) -- a camera's cost is mostly
+the point cloud and positional tracking, not its rate -- so a lean three-camera
+run should land near 45-48%. That run is still to do; the boot stack could not
+be stopped while teammates were using its topics.
+
 Details: `logs/results/2026-09-16_lean-vs-old-camera-profile.md`; the first,
 incomplete attempt: `logs/results/2026-09-15_lean-launch-car-attempt.md`.
 

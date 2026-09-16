@@ -59,9 +59,35 @@ over the window (100% = one core); `tegrastats` at 1 s.
 - `/perception/costmap` stayed at 10 Hz in both runs; this is a load
   reduction, not a throughput change.
 
+## Three cameras, old profile (measured separately, no disruption)
+
+The boot stack *is* the old profile, so it could be measured while running,
+with all three cameras up (13:21, same 30 s method):
+
+| | three cameras, old configs |
+|---|---|
+| camera drivers | front 26% + left 28% + right 26% = **80% of a core** |
+| costmap_node | 108% |
+| viz_node / costmap_rgb / rviz2 | 33% / 11% / 3% |
+| CPU, 12-core mean | 36.0% |
+| GPU mean | 57.6% |
+| RAM | 7362 MB |
+| topics | 27 per camera, 3 point clouds, 9 odom/pose |
+| /perception/costmap | 10.01 Hz |
+
+**The front camera costs 26% while publishing at 8 Hz, the same as the side
+cameras at 15 Hz.** So a camera's cost is dominated by the point cloud and
+positional tracking, not the publish rate: with the same 8 Hz rate as lean,
+the old profile still pays ~26% because it also builds a cloud and tracks
+pose. Measured lean cameras cost 15-16% each, which puts a lean three-camera
+run at roughly **45-48% instead of 80%**, around a third of a core saved on
+the drivers alone. That extrapolation still needs its own run; the boot stack
+could not be stopped while teammates were using its topics.
+
 ## Caveats
 
-- Two cameras, not three. The front camera is down.
+- The lean run used two cameras; the three-camera old profile was measured
+  separately (above), and the three-camera lean figure is an extrapolation.
 - One 30 s sample per configuration, stationary robot, indoors.
 - `depth_stabilization: 0` in the lean profile was not evaluated for quality
   here; that needs a look at the depth image with something in view.
