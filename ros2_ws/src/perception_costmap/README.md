@@ -38,8 +38,10 @@ source install/setup.bash
 
 ## Run
 
-**On the car**, start only what perception needs. The launch reuses anything
-already running, so two people can't start a camera twice:
+**On the car**, start only what perception needs — quick reference with
+arguments, gotchas and what changed: **[LEAN_STACK.md](LEAN_STACK.md)**. The
+launch reuses anything already running, so two people can't start a camera
+twice:
 
 ```bash
 ros2 launch perception_costmap perception_stack.launch.py                # sensors + 3 cameras + costmap
