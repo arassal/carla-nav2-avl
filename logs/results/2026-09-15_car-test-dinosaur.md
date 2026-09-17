@@ -95,8 +95,18 @@ had no fix indoors, so the checks after it would have refused too.
 - A reset with obstacles in view (N > 0 lethal cells cleared).
 - The front camera path: camera down during the test.
 
-## Hardware notes for the team
+## Camera notes for the team
 
-- zed_front: GMSL failure from 12:24:36, not recovering by relaunch. Recovery
-  is `deploy/clean_camera_restart.sh` (sudo, restarts all three cameras).
+- zed_front stopped streaming at 12:24:36 and the watchdog relaunched it ~19
+  times without success; `clean_camera_restart.sh` (sudo, restarts all three
+  cameras) brought it back.
 - zed_right rebooted 3 times and zed_left once in the preceding hour.
+
+> **Note added 2026-09-16.** A camera that will not open always reports the
+> same `CAMERA STREAM FAILED TO START` from the ZED SDK. The cause is only
+> visible in nvargus-daemon's log: `AlreadyAllocated: Device 0 (of 1) is in
+> use` means **another program on the car holds that camera** (a ZED X takes
+> one client at a time), and no restart or reboot will help until it exits.
+> That turned out to be the cause of a later front-camera outage. Check
+> `journalctl -u nvargus-daemon` and for other camera programs before
+> restarting anything.
