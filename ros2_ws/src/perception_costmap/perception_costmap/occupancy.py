@@ -61,9 +61,19 @@ class GridSpec:
         return int(round((self.y_max - self.y_min) / self.resolution))
 
     def world_to_cell(self, x: float, y: float):
-        """World (x,y) in metres -> (col, row), or None if outside the grid."""
-        col = int((x - self.x_min) / self.resolution)
-        row = int((y - self.y_min) / self.resolution)
+        """World (x,y) in metres -> (col, row), or None if outside the grid.
+
+        Uses floor, not int() truncation. int() rounds toward zero, so a
+        coordinate up to one full cell BELOW x_min/y_min maps to index 0 and
+        passes the bounds check instead of being rejected -- silently dragging
+        out-of-grid points onto the border. ``points_to_grid_mask`` was fixed
+        for this in obstacles.py and pinned by
+        ``test_points_just_below_grid_min_are_dropped``; the method it was
+        named after kept the bug until 2026-09-10. Only the lower edge was
+        affected -- the upper edge was always rejected correctly.
+        """
+        col = int(np.floor((x - self.x_min) / self.resolution))
+        row = int(np.floor((y - self.y_min) / self.resolution))
         if 0 <= col < self.width and 0 <= row < self.height:
             return col, row
         return None
@@ -128,6 +138,16 @@ DEFAULT_OBSTACLE_CLASSES = {
     "vehicle": dict(radius=1.5, scaling=2.5, exclusion_radius=0.6),
     "cone":    dict(radius=0.6, scaling=5.0, exclusion_radius=0.2),
     "generic": dict(radius=1.0, scaling=3.0, exclusion_radius=0.5),
+    # Painted course lines. Tiny lethal core -- a line is a boundary a few
+    # centimetres wide, not a volume -- with a short, steep caution ramp so
+    # the planner is pushed off it without a wide no-go band that would close
+    # a narrow lane.
+    "white_line": dict(radius=0.4, scaling=4.0, exclusion_radius=0.2),
+    # IGVC simulated potholes: 2 ft (0.61 m) solid white circles that
+    # MUST be avoided -- driving over one ends the run. The detected
+    # mask already covers the disc, so exclusion_radius is margin
+    # around it rather than the pothole's own size.
+    "pothole": dict(radius=0.8, scaling=3.0, exclusion_radius=0.2),
 }
 
 # Distance (m) over which cost ramps up as you approach the road edge from

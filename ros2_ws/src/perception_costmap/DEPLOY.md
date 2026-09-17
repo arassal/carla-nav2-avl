@@ -33,7 +33,7 @@ and lidar drivers publishing the same topics.
 ## 2. Build + verify (10 min)
     cd ros2_ws && colcon build --packages-select perception_costmap
     source install/setup.bash
-    cd src/perception_costmap && PYTHONPATH=.:$PYTHONPATH python3 -m pytest test -q
+    cd src/perception_costmap && PYTHONPATH=. python3 -m pytest test -q
     python3 tools/bench_perception.py --frames 50          # hsv baseline
 
 ## 3. Models
@@ -96,7 +96,13 @@ CUDA 12.6, TensorRT 10.3. Real config: `config/perception_dinosaur.yaml`
     TwinLiteNet+ nano, CUDA   73.7 ms   <- dominates
     3-camera node             ~5 Hz     (below the 8 Hz acceptance)
 
-To close the gap: TensorRT-export TwinLiteNet (same treatment as YOLO), and
+> **Historical (2026-07-02).** The car has since switched to
+> `segmentation_method: hsv` (`config/perception_dinosaur.yaml`), so
+> TwinLiteNet is no longer in the loop and no longer the bottleneck. A laptop
+> profile (ISSUES.md P2) now points at the node's own main thread. Re-measure
+> on the car with §7 before acting on either number.
+
+To close the gap (as planned then): TensorRT-export TwinLiteNet (same treatment as YOLO), and
 MAXN power mode (`nvpmodel -m 0` — requires a reboot on this board).
 TwinLiteNet weights: gdown the Drive folder in the TwinLiteNetPlus README
 (nano.pth = 217 KB).
@@ -116,6 +122,82 @@ TwinLiteNet weights: gdown the Drive folder in the TwinLiteNetPlus README
   `rgb/image_rect_color` the docs float around.
 
 **Still open:** per-camera IPM calibration (§4 tape-measure procedure — the
-current homographies are URDF-derived) and TwinLiteNet TRT export.
+current homographies are URDF-derived). TwinLiteNet TRT export only matters if
+TwinLiteNet comes back into the car config.
 Boot-time autostart shipped 2026-07-07: `deploy/percept-stack.service`
 (installed + enabled on the car).
+
+## 7. Car test checklist (PRs #1-#4, 2026-09-14)
+
+Everything below has been tested on a laptop only. Run it on dinosaur before
+merging the lean launch into the boot service, and **before any costmap
+performance work** (ISSUES.md P2 is on hold until this is done). Record
+results in `logs/results/<date>_car-test.md`.
+
+In every terminal, run `conda deactivate` first (conda `(base)` auto-activates for
+the `dinosaur` user and hides system pytest/python), then match the boot stack
+(login shells default to domain 42):
+`export ROS_DOMAIN_ID=0 RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` plus `CYCLONEDDS_URI`
+as in `deploy/full_stack_restart.sh`.
+
+**0. Baseline, on the current boot stack (before changing anything)**
+
+```bash
+ros2 topic hz /perception/costmap            # costmap rate
+tegrastats --interval 1000                   # CPU/GPU load, ~30 s
+ros2 topic list | grep confidence            # expect 3 confidence_map topics (ISSUES.md C9)
+```
+
+**1. Map click (PR #1).** Start autodrive the usual way (`auto_drive.launch.py`
+from avros_bringup), click a destination in RViz. Expected: no "computer-vision Nav2 bridge is stale";
+`ros2 topic hz /perception/costmap_cloud` about 10 Hz.
+
+**2. Costmap node (PR #3).** After `colcon build` with PR #3, stop the boot
+stack's own costmap first (Ctrl-C in its window: `tmux -L percept attach -t percept`,
+window `costmap`) so two nodes don't publish the same topic. From the package directory:
+```bash
+ros2 launch perception_costmap perception.launch.py \
+    config:=$(ros2 pkg prefix perception_costmap)/share/perception_costmap/config/perception_dinosaur.yaml
+ros2 topic echo /diagnostics --once          # camera / detectors / output status
+deploy/fresh_run.sh --perception             # reset (Nav2 not running): expect exit 0
+```
+
+**3. Lean launch (PR #4).** Stop the boot stack first
+(`sudo systemctl stop percept-stack`), then:
+
+> If any camera hardware was power-cycled while the Jetson stayed up, **reboot
+> the Jetson first.** Restarting `nvargus-daemon`/`zed_x_daemon` isn't enough:
+> on 2026-09-15 that left the ZED X driver probing duplicate serials and every
+> camera failing with "Sensor could not be opened".
+
+```bash
+ros2 launch perception_costmap perception_stack.launch.py
+ros2 topic list | grep zed_                  # expect only rgb, depth, confidence per camera
+ros2 topic hz /perception/costmap
+tegrastats --interval 1000                   # compare with step 0
+```
+In a second terminal, run the same launch again: it should log "already
+running -- reusing" and start nothing.
+
+**4. Camera sides (ISSUES.md C8).** Cover the LEFT camera by hand and watch
+`ros2 topic hz /zed_left/zed_node/rgb/color/rect/image` vs `/zed_right/...`:
+the image that goes dark tells you which serial is really on the left.
+
+**5. Depth quality.** The lean profiles set `depth_stabilization: 0`. In RViz,
+view `/zed_front/zed_node/depth/depth_registered` with the robot parked facing
+a wall or cone. If it flickers badly, set `depth_stabilization: 1` and
+`pos_tracking_enabled: true` in `config/zed_perception_*.yaml` and repeat step 3.
+
+**What to bring back:** costmap Hz and tegrastats for steps 0 and 3, the
+confidence topic list, which camera went dark in step 4, and any launch errors.
+
+| check | result | notes |
+|---|---|---|
+| 0. baseline costmap Hz / CPU / GPU | | |
+| 0. confidence topics present? | | |
+| 1. click accepted, cloud Hz | | |
+| 2. costmap publishes, reset clean | | |
+| 3. lean launch Hz / CPU / GPU | | |
+| 3. second launch reuses | | |
+| 4. real left serial | | |
+| 5. depth OK with stabilization 0? | | |

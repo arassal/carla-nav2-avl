@@ -13,6 +13,21 @@ architecture.
 | `/perception/obstacle_points` | `sensor_msgs/PointCloud2` | lidar obstacle returns (for Nav2's obstacle layer) |
 | `/perception/costmap_cloud` | `sensor_msgs/PointCloud2` | nearest lethal/off-road boundary per bearing consumed by Nav2 |
 
+## Services
+
+| Service | Type | Meaning |
+|---------|------|---------|
+| `/perception/reset` | `std_srvs/Trigger` | Drop all accumulated state — per-cell temporal confidence, motion-compensation reference, buffered samples, counters — without restarting. Models, parameters and homographies are untouched, so the node publishes again on the next tick. |
+
+Call it between runs with `deploy/fresh_run.sh`, which also clears both Nav2
+costmaps and reports whether the stack is genuinely clean.
+
+**Why it matters for IGVC:** each run must carry nothing over from the last.
+Nothing here is written to disk, both Nav2 costmaps are rolling with no static
+layer, and STVL decays in ~3 s — the temporal filter is the only state that
+outlives a run, and it does so for the life of the process. Restarting the
+whole stack cleared it by accident; this makes it deliberate and instant.
+
 ## Build
 
 ```bash
@@ -22,6 +37,48 @@ source install/setup.bash
 ```
 
 ## Run
+
+**On the car**, start only what perception needs — quick reference with
+arguments, gotchas and what changed: **[LEAN_STACK.md](LEAN_STACK.md)**. The
+launch reuses anything already running, so two people can't start a camera
+twice:
+
+```bash
+ros2 launch perception_costmap perception_stack.launch.py                # sensors + 3 cameras + costmap
+ros2 launch perception_costmap perception_stack.launch.py cameras:=front # one camera
+ros2 launch perception_costmap perception_stack.launch.py --show-args    # everything else
+```
+
+Cameras use the lean `config/zed_perception_*.yaml` profiles: RGB, depth and
+confidence only, no point cloud or positional tracking. It does not start viz
+or streaming. See ISSUES.md P1-P4 for why.
+
+To watch it, add `rviz:=true`: that starts `costmap_rgb_node` (the colorized
+`/viz/costmap_rgb` cloud, ~10% of a core) and, **after the last camera**, opens
+RViz on `deploy/perception_lean.rviz` -- the costmap as flat squares in
+`base_link`. `viz:=true` starts just the colorizer; `viz:=false` with
+`rviz:=true` opens RViz without it.
+
+Two things that cost an afternoon on the car (2026-09-16):
+
+- **RViz must start after the cameras.** Opening a ZED while RViz already holds
+  the NoMachine display's GL context killed the camera with an Argus
+  `BadParameter` on an EGL buffer. The boot script starts RViz last for the
+  same reason; this launch now does too.
+- **Don't load a config with a RobotModel over NoMachine.** `zedx.stl` is not
+  installed, and rviz2 segfaults with "failed to create drawable" while loading
+  it. `perception_lean.rviz` leaves the model and the camera panels out;
+  `costmap_cams.rviz` (the operator view) keeps them and needs a real display.
+
+Don't point RViz's Map display at `/perception/costmap` instead: `unknown_cost`
+is 25 on the car, so blind cells arrive as a normal low cost and a Map display
+paints them as drivable. costmap_rgb_node uses `/perception/known` to tell them
+apart.
+
+Over SSH set a display first -- `export DISPLAY=:1001`, see `ls /tmp/.X11-unix/`
+-- or run it from a terminal inside the NoMachine desktop.
+
+**Just the node** (CARLA, or with sensors already up):
 
 ```bash
 # defaults (topics in config/perception_costmap.yaml)
@@ -63,7 +120,7 @@ Two options in `config/perception_costmap.yaml`:
 
 ```bash
 cd ros2_ws/src/perception_costmap
-PYTHONPATH=.:$PYTHONPATH python3 -m pytest test -q     # 39 offline tests
+PYTHONPATH=. python3 -m pytest test -q     # 90 passed (2026-09-14)
 ```
 
 ## CARLA smoke test (on the x86 / 5090 box)
@@ -130,7 +187,7 @@ result rather than briefly publishing a road-only map during model warm-up.
   the presence of a TensorRT engine alone is not an acceptance criterion.
 - Blind-region policy is intentionally unchanged by this upgrade.
 
-**Done and verified offline + on the Dinosaur Jetson (78 tests green):**
+**Done and verified offline + on the Dinosaur Jetson (offline suite green):**
 - Sensor-data (`BEST_EFFORT`) QoS on every subscription, with `image_stale_sec`
   / `lidar_stale_sec` guards that drop frames instead of building a costmap
   from stale data.
