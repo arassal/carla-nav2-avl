@@ -98,6 +98,28 @@ class TemporalObstacleFilter:
         np.clip(self.conf, 0.0, 1.0, out=self.conf)
         return self.conf >= self.threshold
 
+    def reset(self):
+        """Forget every accumulated observation. Returns the cells cleared.
+
+        The filter deliberately remembers across ticks -- that is the point of
+        it, and ``test_unobserved_cells_hold_confidence`` pins the behaviour
+        that a cell stays lethal while the camera looks away. That memory must
+        NOT survive into a new run.
+
+        For IGVC the rule is that each run starts with no knowledge carried
+        from the last one. Nothing here is written to disk, and both Nav2
+        costmaps are rolling with no static layer, so the only thing that
+        outlives a run is this array -- and it does so for as long as the
+        process lives. Restarting the whole stack cleared it by accident;
+        this makes it deliberate and instant.
+
+        Returns the number of cells that were reporting lethal, so a caller
+        can say what it actually threw away instead of claiming success blindly.
+        """
+        cleared = int(np.count_nonzero(self.conf >= self.threshold))
+        self.conf[...] = 0.0
+        return cleared
+
     def compensate_motion(self, previous_pose, current_pose, grid):
         """Reproject confidence from the previous base frame to the current.
 

@@ -22,7 +22,7 @@ not build on them without checking `CLAUDE.md` and `ros2_ws/README.md` first.
 Open a PR from your feature branch into `main`; keep the branch focused.
 
 ## Before you open a PR
-- Run the offline tests: `cd ros2_ws/src/perception_costmap && PYTHONPATH=. python3 -m pytest test -q` (39 should pass).
+- Run the offline tests: `cd ros2_ws/src/perception_costmap && PYTHONPATH=. python3 -m pytest test -q` (all should pass).
 - Keep changes portable: no hardcoded `/home/<user>` paths on the run path
   (nodes, launch files, configs). The `deploy/*.sh` scripts are the one
   documented exception (as-run, host-specific).
