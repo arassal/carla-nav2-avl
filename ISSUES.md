@@ -551,3 +551,21 @@ llvmpipe renders on the CPU the controller and perception share, and its
 camera panels keep all three RGB streams flowing. `perception_stack.launch.py`
 starts none of these; run them only while someone is watching. The boot
 service itself is unchanged until the lean launch has run on the car.
+
+---
+
+### P5 — the competition preset runs at 2.6 Hz, 92% of it in one function — OPEN
+
+`perception_competition.yaml` (white lines + potholes, `148be12`) holds only
+**2.59 Hz of its 10 Hz publish_rate at 232% CPU**, against 9.93 Hz / 67% for
+`perception_dinosaur.yaml` on the same cameras.
+
+`line_bev.detect_bev` is 417 ms of the 452 ms tick, and `_ridge_contrast`
+inside it is 330 ms: it runs once per candidate component (~66 per tick) and
+each call fills, shifts (`cv2.warpAffine`) and reduces over the **whole
+800x800 fine grid** to sample a strip beside one small segment.
+
+Suggested fix, with the code sketch and the measurement it came from:
+`logs/results/2026-09-17_competition-preset-profile.md`. Not implemented --
+this is the competition detector, so it wants an equivalence check against
+recorded frames rather than a blind edit.

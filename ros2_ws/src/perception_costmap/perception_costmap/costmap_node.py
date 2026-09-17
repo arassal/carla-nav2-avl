@@ -57,6 +57,9 @@ class CameraSource:
         self.depth_buffer = TimestampedBuffer(maxlen=4)
         self.confidence_buffer = TimestampedBuffer(maxlen=4)
         self.last_yolo_stamp = None
+        # Per-frame perception cache: (stamp, result) from _camera_perception.
+        self.percep_stamp = None
+        self.percep = None
         self.last_cone_stamp = None
         self.H, self.known = None, None
         self._node = node
@@ -494,6 +497,8 @@ class CostmapNode(Node):
         self._depth_matches = 0
         self._depth_unmatched = 0
         self._depth_waits = 0
+        self._percep_cached = 0
+        self._percep_computed = 0
         self._ticks = 0
         # Bumped by /perception/reset. Detection jobs carry it, so a result
         # still on the worker thread when a reset lands is discarded instead
@@ -590,6 +595,80 @@ class CostmapNode(Node):
         return (((bev.warp_to_bev(
             image_mask.astype(np.uint8) * 255, camera["H"], self.grid) > 127)
                  & camera["known"]), False, stats if depth_ready else None)
+
+    def _camera_perception(self, cam):
+        """Segmentation and line/pothole detection for one camera's frame.
+
+        Cached on the frame's stamp. The tick runs at publish_rate while each
+        camera publishes at its own rate, so when the tick is faster the same
+        frame is presented more than once and this work is bit-identical every
+        time. On the car (2026-09-17) segmentation was ~18 ms of a 28 ms tick
+        and line_bev.detect_bev ~139 ms per camera, with the cameras at 8 Hz
+        against a 10 Hz tick -- one tick in five recomputed an unchanged frame.
+
+        Returns {"road": mask, "grids": {class: grid}}; the grids are already
+        clipped to the camera's footprint, so callers only OR them in.
+        """
+        if cam.percep is not None and cam.percep_stamp == cam.stamp:
+            self._percep_cached += 1
+            return cam.percep
+        self._percep_computed += 1
+
+        grids = {}
+        road = self.segmenter(cam.img)
+        if (self.line_detect_space == "bev"
+                and (self.use_white_lines or self.use_potholes)):
+            # Detection happens in metric space and comes back
+            # already in grid cells -- no mask warp afterwards.
+            found = line_bev.detect_bev(
+                cam.img, cam.H, self.grid,
+                upsample=self.bev_upsample,
+                max_range_m=self.bev_max_range_m,
+                min_line_length_m=self.bev_min_line_length_m,
+                max_line_width_m=self.bev_max_line_width_m,
+                min_aspect=self.bev_min_aspect,
+                response_floor=self.bev_response_floor,
+                min_ridge_contrast=self.bev_min_ridge_contrast,
+                white_s_max=self.wl_s_max,
+                min_circularity=self.pothole_min_circularity,
+                want_lines=self.use_white_lines,
+                want_potholes=self.use_potholes)
+            if self.use_white_lines:
+                grids["white_line"] = found["lines"] & cam.known
+            if self.use_potholes:
+                grids["pothole"] = found["potholes"] & cam.known
+        elif self.use_white_lines or self.use_potholes:
+            lines, potholes = segmentation.white_feature_masks(
+                cam.img, min_elong=self.wl_min_elong,
+                require_grass=self.wl_require_grass,
+                white_v_min=self.wl_v_min, white_s_max=self.wl_s_max,
+                roi_top_frac=self.wl_roi_top,
+                min_circularity=self.pothole_min_circularity)
+            if self.use_potholes:
+                # a pothole is never a boundary: it gets its own
+                # lethal class so the elongation filter that selects
+                # lines cannot silently discard it
+                grids["pothole"] = (
+                    (bev.warp_to_bev(potholes.astype(np.uint8) * 255,
+                                     cam.H, self.grid) > 127)
+                    & cam.known)
+            if self.use_white_lines and self.line_detect_space == "image":
+                if self.white_line_mode == "obstacle":
+                    # the line IS the thing to avoid: give it a lethal core
+                    # and its own inflation instead of burying it in
+                    # offroad_cost, which on a grass course would paint the
+                    # entire field the same value as the line
+                    grids["white_line"] = (
+                        (bev.warp_to_bev(lines.astype(np.uint8) * 255,
+                                         cam.H, self.grid) > 127)
+                        & cam.known)
+                else:
+                    # legacy: painted course lines are boundaries, not drivable
+                    road = road & ~lines
+
+        result = {"road": road, "grids": grids}
+        cam.percep_stamp, cam.percep = cam.stamp, result
+        return result
 
     def _process_detection_task(self, task):
         """Run all GPU detectors serially outside the ROS timer thread."""
@@ -769,56 +848,10 @@ class CostmapNode(Node):
             if cam.name not in ready_cameras:
                 continue
             saw_camera = True
-            road = self.segmenter(cam.img)
-            if (self.line_detect_space == "bev"
-                    and (self.use_white_lines or self.use_potholes)):
-                # Detection happens in metric space and comes back
-                # already in grid cells -- no mask warp afterwards.
-                found = line_bev.detect_bev(
-                    cam.img, cam.H, self.grid,
-                    upsample=self.bev_upsample,
-                    max_range_m=self.bev_max_range_m,
-                    min_line_length_m=self.bev_min_line_length_m,
-                    max_line_width_m=self.bev_max_line_width_m,
-                    min_aspect=self.bev_min_aspect,
-                    response_floor=self.bev_response_floor,
-                    min_ridge_contrast=self.bev_min_ridge_contrast,
-                    white_s_max=self.wl_s_max,
-                    min_circularity=self.pothole_min_circularity,
-                    want_lines=self.use_white_lines,
-                    want_potholes=self.use_potholes)
-                if self.use_white_lines:
-                    class_grids["white_line"] |= found["lines"] & cam.known
-                if self.use_potholes:
-                    class_grids["pothole"] |= found["potholes"] & cam.known
-            elif self.use_white_lines or self.use_potholes:
-                lines, potholes = segmentation.white_feature_masks(
-                    cam.img, min_elong=self.wl_min_elong,
-                    require_grass=self.wl_require_grass,
-                    white_v_min=self.wl_v_min, white_s_max=self.wl_s_max,
-                    roi_top_frac=self.wl_roi_top,
-                    min_circularity=self.pothole_min_circularity)
-                if self.use_potholes:
-                    # a pothole is never a boundary: it gets its own
-                    # lethal class so the elongation filter that selects
-                    # lines cannot silently discard it
-                    class_grids["pothole"] |= (
-                        (bev.warp_to_bev(potholes.astype(np.uint8) * 255,
-                                         cam.H, self.grid) > 127)
-                        & cam.known)
-            if self.use_white_lines and self.line_detect_space == "image":
-                if self.white_line_mode == "obstacle":
-                    # the line IS the thing to avoid: give it a lethal core
-                    # and its own inflation instead of burying it in
-                    # offroad_cost, which on a grass course would paint the
-                    # entire field the same value as the line
-                    class_grids["white_line"] |= (
-                        (bev.warp_to_bev(lines.astype(np.uint8) * 255,
-                                         cam.H, self.grid) > 127)
-                        & cam.known)
-                else:
-                    # legacy: painted course lines are boundaries, not drivable
-                    road = road & ~lines
+            perception = self._camera_perception(cam)
+            road = perception["road"]
+            for group, mask in perception["grids"].items():
+                class_grids[group] |= mask
             # clip to the camera's footprint: warpPerspective also fills
             # mirror cells behind the camera plane (negative projective depth)
             if self.segmentation_method == "none":
@@ -964,7 +997,7 @@ class CostmapNode(Node):
             self.get_logger().info(
                 "accuracy pipeline: yolo=%s cones=%s depth=%d ipm_fallback=%d "
                 "sync=%d/%d waits=%d confidence=%d/%d conf_reject=%d "
-                "depth_outlier=%d inference=%d/%d/%d" % (
+                "depth_outlier=%d inference=%d/%d/%d frames=%d/%d" % (
                     sorted(self._last_inference_cameras["yolo"]),
                     sorted(self._last_inference_cameras["cones"]),
                     self._depth_projections,
@@ -978,7 +1011,8 @@ class CostmapNode(Node):
                     self._depth_outlier_rejected,
                     self.detector_worker.submitted,
                     self.detector_worker.replaced,
-                    self.detector_worker.completed))
+                    self.detector_worker.completed,
+                    self._percep_computed, self._percep_cached))
 
     def _on_reset(self, request, response):
         """Drop every accumulated observation and start as if freshly launched.
@@ -1007,6 +1041,7 @@ class CostmapNode(Node):
         for cam in self.cameras:
             cam.img, cam.stamp = None, 0.0
             cam.last_yolo_stamp = None
+            cam.percep_stamp, cam.percep = None, None
             cam.last_cone_stamp = None
             clear_sample_buffer(cam.depth_buffer)
             clear_sample_buffer(cam.confidence_buffer)
@@ -1020,6 +1055,7 @@ class CostmapNode(Node):
                         "_confidence_projections", "_confidence_missing",
                         "_confidence_rejected", "_depth_outlier_rejected",
                         "_depth_matches", "_depth_unmatched", "_depth_waits",
+                        "_percep_cached", "_percep_computed",
                         "_ticks", "_detector_errors"):
             setattr(self, counter, 0)
         self._last_detector_error_time = None
