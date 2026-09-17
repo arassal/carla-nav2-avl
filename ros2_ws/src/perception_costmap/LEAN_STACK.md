@@ -36,7 +36,7 @@ Restore the normal stack with `sudo systemctl start percept-stack`.
 | `viz` | `auto` | `costmap_rgb_node` only; `auto` = on when `rviz:=true` |
 | `lidar` | `true` | Velodyne. Without the EKF it logs `"odom" does not exist`; perception doesn't use it |
 | `sensors` | `true` | URDF/TF, Velodyne, Xsens |
-| `costmap_rate` | *(config)* | override `publish_rate` (Hz). Keep >= the fastest camera's rate or frames go unprocessed |
+| `costmap_rate` | *(config)* | override `publish_rate` (Hz). Keep >= the fastest camera's rate or frames go unprocessed. Measured: 10->5 Hz saves only 0.19 core, see `logs/results/2026-09-17_costmap-rate-sweep.md` |
 | `reuse_running` | `true` | skip anything already running instead of starting a second copy |
 
 `--show-args` lists the rest (serials, delays, `ros_domain_id`).
