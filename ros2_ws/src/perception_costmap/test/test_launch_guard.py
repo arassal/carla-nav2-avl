@@ -8,6 +8,13 @@ def test_camera_list_parses_and_keeps_order():
     assert g.parse_camera_list("") == []
 
 
+def test_none_means_no_cameras():
+    """ros2 launch rejects `cameras:=`, so `cameras:=none` is the way to ask
+    for sensors and costmap only (hit on the car 2026-09-16)."""
+    for text in ("none", "NONE", " none ", " "):
+        assert g.parse_camera_list(text) == []
+
+
 def test_unknown_camera_is_rejected_by_name():
     with pytest.raises(ValueError, match="back"):
         g.parse_camera_list("front,back")

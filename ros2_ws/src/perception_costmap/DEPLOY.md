@@ -134,7 +134,9 @@ merging the lean launch into the boot service, and **before any costmap
 performance work** (ISSUES.md P2 is on hold until this is done). Record
 results in `logs/results/<date>_car-test.md`.
 
-In every terminal, match the boot stack first (login shells default to domain 42):
+In every terminal, run `conda deactivate` first (conda `(base)` auto-activates for
+the `dinosaur` user and hides system pytest/python), then match the boot stack
+(login shells default to domain 42):
 `export ROS_DOMAIN_ID=0 RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` plus `CYCLONEDDS_URI`
 as in `deploy/full_stack_restart.sh`.
 
@@ -162,6 +164,12 @@ deploy/fresh_run.sh --perception             # reset (Nav2 not running): expect 
 
 **3. Lean launch (PR #4).** Stop the boot stack first
 (`sudo systemctl stop percept-stack`), then:
+
+> If any camera hardware was power-cycled while the Jetson stayed up, **reboot
+> the Jetson first.** Restarting `nvargus-daemon`/`zed_x_daemon` isn't enough:
+> on 2026-09-15 that left the ZED X driver probing duplicate serials and every
+> camera failing with "Sensor could not be opened".
+
 ```bash
 ros2 launch perception_costmap perception_stack.launch.py
 ros2 topic list | grep zed_                  # expect only rgb, depth, confidence per camera

@@ -38,8 +38,10 @@ source install/setup.bash
 
 ## Run
 
-**On the car**, start only what perception needs. The launch reuses anything
-already running, so two people can't start a camera twice:
+**On the car**, start only what perception needs — quick reference with
+arguments, gotchas and what changed: **[LEAN_STACK.md](LEAN_STACK.md)**. The
+launch reuses anything already running, so two people can't start a camera
+twice:
 
 ```bash
 ros2 launch perception_costmap perception_stack.launch.py                # sensors + 3 cameras + costmap
@@ -48,8 +50,33 @@ ros2 launch perception_costmap perception_stack.launch.py --show-args    # every
 ```
 
 Cameras use the lean `config/zed_perception_*.yaml` profiles: RGB, depth and
-confidence only, no point cloud or positional tracking. It does not start viz,
-streaming or RViz. See ISSUES.md P1-P4 for why.
+confidence only, no point cloud or positional tracking. It does not start viz
+or streaming. See ISSUES.md P1-P4 for why.
+
+To watch it, add `rviz:=true`: that starts `costmap_rgb_node` (the colorized
+`/viz/costmap_rgb` cloud, ~10% of a core) and, **after the last camera**, opens
+RViz on `deploy/perception_lean.rviz` -- the costmap as flat squares in
+`base_link`. `viz:=true` starts just the colorizer; `viz:=false` with
+`rviz:=true` opens RViz without it.
+
+Two things that cost an afternoon on the car (2026-09-16):
+
+- **RViz must start after the cameras.** Opening a ZED while RViz already holds
+  the NoMachine display's GL context killed the camera with an Argus
+  `BadParameter` on an EGL buffer. The boot script starts RViz last for the
+  same reason; this launch now does too.
+- **Don't load a config with a RobotModel over NoMachine.** `zedx.stl` is not
+  installed, and rviz2 segfaults with "failed to create drawable" while loading
+  it. `perception_lean.rviz` leaves the model and the camera panels out;
+  `costmap_cams.rviz` (the operator view) keeps them and needs a real display.
+
+Don't point RViz's Map display at `/perception/costmap` instead: `unknown_cost`
+is 25 on the car, so blind cells arrive as a normal low cost and a Map display
+paints them as drivable. costmap_rgb_node uses `/perception/known` to tell them
+apart.
+
+Over SSH set a display first -- `export DISPLAY=:1001`, see `ls /tmp/.X11-unix/`
+-- or run it from a terminal inside the NoMachine desktop.
 
 **Just the node** (CARLA, or with sensors already up):
 

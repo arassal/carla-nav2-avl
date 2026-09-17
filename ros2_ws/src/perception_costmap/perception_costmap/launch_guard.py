@@ -26,7 +26,13 @@ _CONTAINER_NS = re.compile(r"__ns:=/zed_([A-Za-z0-9_]+)")
 
 def parse_camera_list(text):
     """'front, left' -> ['front', 'left']. Order kept, duplicates dropped.
-    Raises ValueError naming any camera that isn't on the car."""
+
+    'none' (or nothing) means no cameras -- `ros2 launch` rejects an empty
+    argument value, so `cameras:=none` is how you ask for sensors only.
+    Raises ValueError naming any camera that isn't on the car.
+    """
+    if str(text).strip().lower() in ("", "none"):
+        return []
     names = []
     for raw in str(text).split(","):
         name = raw.strip()
