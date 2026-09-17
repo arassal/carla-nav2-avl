@@ -191,9 +191,29 @@ class TwinLiteTRTSegmenter:
         return (torch.argmax(da, dim=1).squeeze(0).cpu().numpy() == 1)
 
 
+class NullSegmenter:
+    """Everything observed is drivable.
+
+    For a course marked out with painted lines on grass there is no "road" to
+    find -- the drivable area is simply everywhere the cameras can see that is
+    not a line. Road segmentation there is worse than useless: HSV hunts for
+    asphalt, finds none, and the whole field reads as off-road. Pair this with
+    white_line_mode: obstacle so the lines are the only thing that costs.
+    """
+
+    def __init__(self, **_ignored):
+        pass
+
+    def __call__(self, img_bgr):
+        return np.ones(img_bgr.shape[:2], dtype=bool)
+
+
 def create_segmenter(method="hsv", **kw):
-    """Factory: 'hsv' (classical, no deps) or 'twinlitenet' (learned,
-    needs torch + cloned repo + weights -- kw: repo_path, weights, config)."""
+    """Factory: 'hsv' (classical, no deps), 'none' (everything drivable --
+    line-marked courses), or 'twinlitenet' (learned, needs torch + cloned
+    repo + weights -- kw: repo_path, weights, config)."""
+    if method == "none":
+        return NullSegmenter(**kw)
     if method == "hsv":
         return HsvSegmenter(**kw)
     if method == "twinlitenet":
@@ -212,32 +232,95 @@ def segment_road(img_bgr, method: str = "hsv", **kw) -> np.ndarray:
     return create_segmenter(method, **kw)(img_bgr)
 
 
-def white_line_mask(img_bgr, min_grass_frac=0.10, min_elong=3.0):
-    """Painted white course lines (IGVC: chalk/paint on grass) as a boolean
-    mask -- used as a NEGATIVE on the road mask so lines become off-road
-    boundaries in the costmap. Classical and cheap (~2 ms): white gate
-    restricted to grass-adjacent pixels, elongated components only.
-    Returns all-False when the scene has too little grass (indoors, roads).
+def white_feature_masks(img_bgr, min_elong=3.0, require_grass=True,
+                        min_grass_frac=0.10, white_v_min=165, white_s_max=70,
+                        roi_top_frac=0.0, min_circularity=0.70,
+                        min_area_frac=0.0006, max_pothole_area_frac=0.15,
+                        pothole_max_elong=1.8):
+    """Split bright-white blobs into course LINES and simulated POTHOLES.
+
+    IGVC 2026 runs AutoNav on ASPHALT, with white boundary lines ~3 in
+    (7.6 cm) wide TAPED on the pavement -- not painted on grass. ("grass"
+    does not appear anywhere in the 2026 rulebook; see rules S II.2.)
+
+    Two different white things sit on that course and must not be confused:
+
+      * boundary lines      -- long and thin (elongation >= min_elong)
+      * simulated potholes  -- 2 ft (0.61 m) SOLID WHITE CIRCLES
+
+    Potholes must be avoided or the run ends, and a circle's elongation is
+    ~1.0, so the very filter that makes the line detector precise rejects
+    every pothole by construction. They are therefore classified separately
+    here rather than being silently dropped.
+
+    Returns ``(lines, potholes)`` as boolean masks.
+
+    CAVEAT: these shape gates are still applied in PERSPECTIVE space, where a
+    fixed-width line spans many pixels near the vehicle and under one pixel
+    far away -- so both the area and elongation gates are range-dependent.
+    Moving this into the BEV, where 7.6 cm is a constant pixel width, is
+    Phase 1 of the perception plan; until then these are near-field values.
     """
     h, w = img_bgr.shape[:2]
     hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
-    grass = cv2.inRange(hsv, (30, 40, 40), (90, 255, 255))
-    if grass.mean() < min_grass_frac * 255:
-        return np.zeros((h, w), bool)
-    white = cv2.inRange(hsv, (0, 0, 165), (180, 70, 255))
-    white &= cv2.dilate(grass, np.ones((25, 25), np.uint8))
+    white = cv2.inRange(hsv, (0, 0, white_v_min), (180, white_s_max, 255))
+    if roi_top_frac > 0.0:
+        # Everything this detector finds is fed through IPM, which assumes the
+        # pixel lies on the ground plane. Anything ABOVE the ground -- ceiling
+        # lights, windows, a bright wall -- violates that and back-projects to
+        # an enormous far-field patch. Measured 2026-09-17 indoors: 558 bright
+        # pixels, all in the top 30% of the frame, became 16% of the grid
+        # LETHAL while the actual floor line was never detected.
+        white[:int(h * roi_top_frac), :] = 0
+    if require_grass:
+        # Only meaningful at a grass venue. On the IGVC asphalt course there
+        # is no green at all, so competition presets set require_grass False
+        # and rely on the shape gates below.
+        grass = cv2.inRange(hsv, (30, 40, 40), (90, 255, 255))
+        if grass.mean() < min_grass_frac * 255:
+            return np.zeros((h, w), bool), np.zeros((h, w), bool)
+        white &= cv2.dilate(grass, np.ones((25, 25), np.uint8))
     white = cv2.morphologyEx(white, cv2.MORPH_CLOSE,
                              np.ones((5, 5), np.uint8))
-    out = np.zeros((h, w), bool)
+
+    lines = np.zeros((h, w), bool)
+    potholes = np.zeros((h, w), bool)
+    frame_area = float(h * w)
     cnts, _ = cv2.findContours(white, cv2.RETR_EXTERNAL,
                                cv2.CHAIN_APPROX_SIMPLE)
     for c in cnts:
-        if cv2.contourArea(c) < 0.0006 * h * w:
+        area = cv2.contourArea(c)
+        if area < min_area_frac * frame_area:
             continue
         (rw, rh) = cv2.minAreaRect(c)[1]
-        if min(rw, rh) == 0 or max(rw, rh) / max(min(rw, rh), 1.0) < min_elong:
+        elong = max(rw, rh) / max(min(rw, rh), 1.0)
+        perim = cv2.arcLength(c, True)
+        circularity = (4.0 * np.pi * area / (perim * perim)) if perim > 0 else 0.0
+
+        if (circularity >= min_circularity
+                and elong <= pothole_max_elong
+                and area <= max_pothole_area_frac * frame_area):
+            target = potholes
+        elif elong >= min_elong:
+            target = lines
+        else:
             continue
         m = np.zeros((h, w), np.uint8)
         cv2.fillPoly(m, [c.reshape(-1, 2)], 255)
-        out |= m > 0
-    return out
+        target |= m > 0
+    return lines, potholes
+
+
+def white_line_mask(img_bgr, min_grass_frac=0.10, min_elong=3.0,
+                    require_grass=True, white_v_min=165, white_s_max=70,
+                    roi_top_frac=0.0):
+    """Course lines only -- compatibility wrapper over white_feature_masks().
+
+    NOTE: this DISCARDS the pothole mask. A caller that must not drive over a
+    simulated pothole has to use white_feature_masks() and consume both.
+    """
+    lines, _ = white_feature_masks(
+        img_bgr, min_elong=min_elong, require_grass=require_grass,
+        min_grass_frac=min_grass_frac, white_v_min=white_v_min,
+        white_s_max=white_s_max, roi_top_frac=roi_top_frac)
+    return lines

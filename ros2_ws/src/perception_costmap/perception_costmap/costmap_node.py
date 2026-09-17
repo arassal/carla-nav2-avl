@@ -28,6 +28,7 @@ from std_srvs.srv import Trigger
 
 from .occupancy import GridSpec, build_cost_array, to_occupancy_grid_msg
 from . import segmentation, obstacles, bev
+from . import line_bev
 from .util import stamp_to_sec, is_fresh, clear_sample_buffer
 from .temporal import TemporalObstacleFilter, remap_with, reproject_maps
 from .detection_schedule import DetectionScheduler
@@ -224,6 +225,54 @@ class CostmapNode(Node):
             ("generic_radius", 1.0),
             ("generic_scaling", 3.0),
             ("generic_exclusion_radius", 0.5),
+            # Painted lines. "offroad" (default) keeps the historical
+            # behaviour: lines are cut out of the drivable mask and inherit
+            # offroad_cost. "obstacle" promotes them to their own inflated
+            # class, which is what a line-marked course wants -- the line is
+            # the only thing to avoid, and it needs a lethal core rather than
+            # the same cost as grass.
+            ("white_line_mode", "offroad"),
+            ("white_line_radius", 0.4),
+            ("white_line_scaling", 4.0),
+            ("white_line_exclusion_radius", 0.2),
+            # Line-detector gates. require_grass is the IGVC paint-on-grass
+            # assumption; turn it off to find lines on pavement or indoors.
+            # IGVC 2026 AutoNav runs on ASPHALT with taped lines -- there
+            # is no grass to gate on, so competition presets set this
+            # False. The default stays True because the campus/grass
+            # venues still rely on the grass gate as their main
+            # discriminator against bright indoor surfaces.
+            ("white_line_require_grass", True),
+            # Simulated potholes: 2 ft solid white circles. Lethal, and
+            # explicitly NOT lane lines. Off by default.
+            ("use_potholes", False),
+            ("pothole_radius", 0.8),
+            ("pothole_scaling", 3.0),
+            ("pothole_exclusion_radius", 0.2),
+            ("pothole_min_circularity", 0.70),
+            # Where white-feature detection runs.
+            #   "image" -- legacy: threshold the camera frame, then warp
+            #              the mask. Every size gate is a range gate.
+            #   "bev"   -- warp first, then match a filter to the known
+            #              7.6 cm line width. Range-independent, and a
+            #              wall/slab/barrel cannot produce a response.
+            ("line_detect_space", "image"),
+            # BEV cells per costmap cell. 4 -> 0.025 m/px, a 3 px line,
+            # 64 ms for 3 cameras. 3 -> 2.3 px and 39 ms; 2 -> 1.5 px
+            # and 23 ms, which is too thin for the matched filter.
+            ("bev_upsample", 4),
+            ("bev_max_range_m", 12.0),
+            ("bev_min_line_length_m", 0.50),
+            ("bev_max_line_width_m", 0.25),
+            ("bev_min_aspect", 3.0),
+            ("bev_response_floor", 25.0),
+            ("bev_min_ridge_contrast", 18.0),
+            ("white_line_v_min", 165),
+            ("white_line_s_max", 70),
+            ("white_line_min_elong", 3.0),
+            # fraction of the frame (from the top) to ignore: above the
+            # horizon nothing is on the ground plane, so IPM cannot place it
+            ("white_line_roi_top_frac", 0.0),
             # Vulnerable road users become lethal on one strong observation
             # and clear more cautiously. Generic blobs retain two-hit
             # confirmation to suppress segmentation noise.
@@ -294,6 +343,14 @@ class CostmapNode(Node):
             "generic": dict(
                 radius=g["generic_radius"], scaling=g["generic_scaling"],
                 exclusion_radius=g["generic_exclusion_radius"]),
+            "white_line": dict(
+                radius=g["white_line_radius"],
+                scaling=g["white_line_scaling"],
+                exclusion_radius=g["white_line_exclusion_radius"]),
+            "pothole": dict(
+                radius=g["pothole_radius"],
+                scaling=g["pothole_scaling"],
+                exclusion_radius=g["pothole_exclusion_radius"]),
         }
         temporal_specs = {
             "person": (
@@ -305,7 +362,21 @@ class CostmapNode(Node):
             "cone": (
                 g["temporal_hit"], g["temporal_miss"],
                 g["temporal_threshold"]),
+            # Painted lines need a temporal filter like every other class --
+            # class_grids carries a "white_line" key whether or not the mode
+            # is active, and the per-class update loop indexes obs_filters by
+            # that key. Without an entry here the node dies on KeyError the
+            # first time it ticks. Uses the generic hit/miss: a line is static,
+            # so evidence should accumulate the same way.
+            "white_line": (
+                g["temporal_hit"], g["temporal_miss"],
+                g["temporal_threshold"]),
             "generic": (
+                g["temporal_hit"], g["temporal_miss"],
+                g["temporal_threshold"]),
+            # A pothole is painted on the ground and never moves, same
+            # as a line -- accumulate with the generic policy.
+            "pothole": (
                 g["temporal_hit"], g["temporal_miss"],
                 g["temporal_threshold"]),
         }
@@ -317,9 +388,12 @@ class CostmapNode(Node):
             for group in temporal_specs
         }
 
-        # models must warm-load at startup, never mid-drive
+        # models must warm-load at startup, never mid-drive -- but skip the
+        # load entirely when camera obstacle detection is off, or a
+        # lines-only preset still pays the TensorRT engine's GPU memory
+        # for a detector whose results are never consumed
         self.yolo = None
-        if g["obstacle_method"] in ("yolo", "both"):
+        if g["use_camera_obstacles"] and g["obstacle_method"] in ("yolo", "both"):
             try:
                 self.yolo = obstacles.YoloObstacleDetector(
                     weights=g["yolo_weights"], conf=g["yolo_conf"],
@@ -332,8 +406,11 @@ class CostmapNode(Node):
                 self.get_logger().warn(
                     "YOLO unavailable (%s); falling back to classical" % e)
 
-        self.yolo_cams = set(c for c in g["yolo_cameras"] if c)
-        self.cone_cams = set(c for c in g["cone_cameras"] if c)
+        # An empty list in YAML (yolo_cameras: []) reaches us as None,
+        # not [], so iterating it raised TypeError and killed the node at
+        # startup. Empty means "no cameras for this detector", as unset does.
+        self.yolo_cams = set(c for c in (g["yolo_cameras"] or []) if c)
+        self.cone_cams = set(c for c in (g["cone_cameras"] or []) if c)
         self.detection_scheduler = DetectionScheduler(
             primary=g["primary_detection_camera"],
             secondary_stride=g["secondary_detection_stride"])
@@ -354,6 +431,40 @@ class CostmapNode(Node):
                 self.get_logger().warn(
                     "cones unavailable (%s); disabled" % e)
         self.use_white_lines = bool(g["use_white_lines"])
+        self.segmentation_method = str(g["segmentation_method"])
+        self.white_line_mode = str(g["white_line_mode"])
+        self.wl_require_grass = bool(g["white_line_require_grass"])
+        self.use_potholes = bool(g["use_potholes"])
+        self.pothole_min_circularity = float(g["pothole_min_circularity"])
+        self.line_detect_space = str(g["line_detect_space"])
+        if self.line_detect_space not in ("image", "bev"):
+            raise ValueError(
+                "line_detect_space must be 'image' or 'bev', got %r"
+                % (self.line_detect_space,))
+        self.bev_upsample = int(g["bev_upsample"])
+        self.bev_max_range_m = float(g["bev_max_range_m"])
+        self.bev_min_line_length_m = float(g["bev_min_line_length_m"])
+        self.bev_max_line_width_m = float(g["bev_max_line_width_m"])
+        self.bev_min_aspect = float(g["bev_min_aspect"])
+        self.bev_response_floor = float(g["bev_response_floor"])
+        self.bev_min_ridge_contrast = float(g["bev_min_ridge_contrast"])
+        self.wl_v_min = int(g["white_line_v_min"])
+        self.wl_s_max = int(g["white_line_s_max"])
+        self.wl_min_elong = float(g["white_line_min_elong"])
+        self.wl_roi_top = float(g["white_line_roi_top_frac"])
+        if (self.line_detect_space == "bev"
+                and str(g["white_line_mode"]) == "offroad"):
+            # "offroad" subtracts lines from the road mask, which lives
+            # in IMAGE space; the BEV detector never produces one. Fail
+            # loudly rather than silently dropping the boundary.
+            raise ValueError(
+                "line_detect_space='bev' requires "
+                "white_line_mode='obstacle' (offroad mode needs an "
+                "image-space road mask)")
+        if self.white_line_mode not in ("offroad", "obstacle"):
+            raise ValueError(
+                "white_line_mode must be 'offroad' or 'obstacle', got "
+                f"{self.white_line_mode!r}")
 
         try:
             if g["segmentation_method"] == "twinlitenet":
@@ -620,7 +731,9 @@ class CostmapNode(Node):
         empty = np.zeros((self.grid.height, self.grid.width), bool)
         road_bev = empty.copy()
         class_grids = {
-            k: empty.copy() for k in ("person", "vehicle", "cone", "generic")}
+            k: empty.copy()
+            for k in ("person", "vehicle", "cone", "generic", "white_line",
+                      "pothole")}
         known = np.zeros((self.grid.height, self.grid.width), bool)
         obstacle_observed = np.zeros_like(known)
         saw_camera = False
@@ -628,7 +741,13 @@ class CostmapNode(Node):
 
         detection_result = self._consume_detection_result(now)
         if detection_result is not None:
+            # the worker only produces detector classes; white_line is built
+            # below from the live frame, so preserve the key it does not set
+            white_line_grid = class_grids["white_line"]
+            pothole_grid = class_grids["pothole"]
             class_grids = detection_result["class_grids"]
+            class_grids.setdefault("white_line", white_line_grid)
+            class_grids.setdefault("pothole", pothole_grid)
             obstacle_observed |= detection_result["observed"]
 
         ready_cameras = []
@@ -651,13 +770,62 @@ class CostmapNode(Node):
                 continue
             saw_camera = True
             road = self.segmenter(cam.img)
-            if self.use_white_lines:
-                # painted course lines are boundaries, not drivable
-                road = road & ~segmentation.white_line_mask(cam.img)
+            if (self.line_detect_space == "bev"
+                    and (self.use_white_lines or self.use_potholes)):
+                # Detection happens in metric space and comes back
+                # already in grid cells -- no mask warp afterwards.
+                found = line_bev.detect_bev(
+                    cam.img, cam.H, self.grid,
+                    upsample=self.bev_upsample,
+                    max_range_m=self.bev_max_range_m,
+                    min_line_length_m=self.bev_min_line_length_m,
+                    max_line_width_m=self.bev_max_line_width_m,
+                    min_aspect=self.bev_min_aspect,
+                    response_floor=self.bev_response_floor,
+                    min_ridge_contrast=self.bev_min_ridge_contrast,
+                    white_s_max=self.wl_s_max,
+                    min_circularity=self.pothole_min_circularity,
+                    want_lines=self.use_white_lines,
+                    want_potholes=self.use_potholes)
+                if self.use_white_lines:
+                    class_grids["white_line"] |= found["lines"] & cam.known
+                if self.use_potholes:
+                    class_grids["pothole"] |= found["potholes"] & cam.known
+            elif self.use_white_lines or self.use_potholes:
+                lines, potholes = segmentation.white_feature_masks(
+                    cam.img, min_elong=self.wl_min_elong,
+                    require_grass=self.wl_require_grass,
+                    white_v_min=self.wl_v_min, white_s_max=self.wl_s_max,
+                    roi_top_frac=self.wl_roi_top,
+                    min_circularity=self.pothole_min_circularity)
+                if self.use_potholes:
+                    # a pothole is never a boundary: it gets its own
+                    # lethal class so the elongation filter that selects
+                    # lines cannot silently discard it
+                    class_grids["pothole"] |= (
+                        (bev.warp_to_bev(potholes.astype(np.uint8) * 255,
+                                         cam.H, self.grid) > 127)
+                        & cam.known)
+            if self.use_white_lines and self.line_detect_space == "image":
+                if self.white_line_mode == "obstacle":
+                    # the line IS the thing to avoid: give it a lethal core
+                    # and its own inflation instead of burying it in
+                    # offroad_cost, which on a grass course would paint the
+                    # entire field the same value as the line
+                    class_grids["white_line"] |= (
+                        (bev.warp_to_bev(lines.astype(np.uint8) * 255,
+                                         cam.H, self.grid) > 127)
+                        & cam.known)
+                else:
+                    # legacy: painted course lines are boundaries, not drivable
+                    road = road & ~lines
             # clip to the camera's footprint: warpPerspective also fills
             # mirror cells behind the camera plane (negative projective depth)
-            road_bev |= (bev.warp_to_bev(
-                road.astype(np.uint8) * 255, cam.H, self.grid) > 127) & cam.known
+            if self.segmentation_method == "none":
+                road_bev |= cam.known
+            else:
+                road_bev |= (bev.warp_to_bev(
+                    road.astype(np.uint8) * 255, cam.H, self.grid) > 127) & cam.known
             known |= cam.known
             run_yolo = (self.yolo is not None and cam.name in selected_yolo
                         and cam.stamp != cam.last_yolo_stamp)
@@ -739,8 +907,19 @@ class CostmapNode(Node):
             obstacle_observed = np.ones_like(obstacle_observed)
         self._compensate_obstacle_history(now)
         if self.temporal_enabled:
+            # A temporal filter only DECAYS a cell it was told it observed.
+            # obstacle_observed comes from the detector pipeline, so with
+            # detectors off (lines-only preset) it is all-False: confidence
+            # then only ever accumulates and every cell ever marked stays
+            # lethal forever -- the map "paints" red and never returns to
+            # free. A painted line is observed-absent wherever a camera can
+            # see the ground and finds no line, so white_line must decay
+            # against camera coverage, not detector coverage.
             class_grids = {
-                group: self.obs_filters[group].update(mask, obstacle_observed)
+                group: self.obs_filters[group].update(
+                    mask,
+                    known if group in ("white_line", "pothole")
+                    else obstacle_observed)
                 for group, mask in class_grids.items()
             }
 

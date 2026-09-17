@@ -138,6 +138,16 @@ DEFAULT_OBSTACLE_CLASSES = {
     "vehicle": dict(radius=1.5, scaling=2.5, exclusion_radius=0.6),
     "cone":    dict(radius=0.6, scaling=5.0, exclusion_radius=0.2),
     "generic": dict(radius=1.0, scaling=3.0, exclusion_radius=0.5),
+    # Painted course lines. Tiny lethal core -- a line is a boundary a few
+    # centimetres wide, not a volume -- with a short, steep caution ramp so
+    # the planner is pushed off it without a wide no-go band that would close
+    # a narrow lane.
+    "white_line": dict(radius=0.4, scaling=4.0, exclusion_radius=0.2),
+    # IGVC simulated potholes: 2 ft (0.61 m) solid white circles that
+    # MUST be avoided -- driving over one ends the run. The detected
+    # mask already covers the disc, so exclusion_radius is margin
+    # around it rather than the pothole's own size.
+    "pothole": dict(radius=0.8, scaling=3.0, exclusion_radius=0.2),
 }
 
 # Distance (m) over which cost ramps up as you approach the road edge from

@@ -1,0 +1,272 @@
+# COMPETITION PRESET -- lines only.
+#
+# Detects NOTHING except painted white lines. No people, no cones, no
+# vehicles, no lidar. The course is grass marked with painted lines, so:
+#   * segmentation_method: none  -- everything the cameras see is drivable.
+#     HSV road segmentation would hunt for asphalt, find none, and paint the
+#     whole field off-road.
+#   * white_line_mode: obstacle  -- the line gets a lethal core and its own
+#     inflation instead of inheriting offroad_cost (which, with no road
+#     segmentation, would mean nothing at all).
+#   * use_camera_obstacles/use_lidar: false, detector camera lists emptied --
+#     YOLO and the cone net do not run, so nothing else can mark the map.
+#
+# Line cost profile: 0-0.2 m LETHAL, ~45 at 0.2 m, ~30 at 0.3 m, ~20 at 0.4 m,
+# free beyond 0.4 m.
+#
+# Run:
+#   ros2 launch perception_costmap perception.launch.py #     config:=.../config/perception_competition.yaml
+#
+# Real-car config for "dinosaur" (Jetson AGX Orin, 3x ZED X + VLP-16).
+# Camera mounts from avros.urdf.xacro (IGVC repo); model paths are the
+# on-car locations. Launch:
+#   ros2 launch perception_costmap perception.launch.py config:=<this file>
+# See DEPLOY.md §6 for the full bring-up story.
+
+perception_costmap:
+  ros__parameters:
+    lidar_topic: /velodyne_points
+    costmap_topic: /perception/costmap
+    obstacle_points_topic: /perception/obstacle_points
+
+    publish_rate: 10.0
+    frame_id: base_link
+
+    x_min: -4.0
+    x_max: 16.0
+    y_min: -10.0
+    y_max: 10.0
+    resolution: 0.1
+
+    # Road/lane segmentation. Default is 'hsv' because it is the only method
+    # that runs from the shipped artifacts alone. 'twinlitenet' is better but
+    # NOT yet turn-key: it needs the upstream TwinLiteNetPlus repo cloned to
+    # twinlite_repo_path AND a hand-built TensorRT engine (there is no shipped
+    # exporter for it -- see DEPLOY.md "Enabling TwinLiteNet"). If you set
+    # 'twinlitenet' without providing both, the node logs a warning and falls
+    # back to hsv anyway, so the default is set honestly to what actually runs.
+    segmentation_method: none
+    # camera-only obstacle detection today. The VLP-16 is wired and publishing
+    # but use_lidar is false -- live avoidance rides on IPM+YOLO, not lidar.
+    # Flip to true (and add a lidar observation source in real_nav2_params.yaml)
+    # to fuse the 360-degree lidar, which is metric and lighting-independent.
+    use_camera_obstacles: false
+    use_lidar: false
+    obstacle_method: yolo
+    yolo_weights: ${AVL_MODELS_DIR}/yolov8n.engine
+    yolo_conf: 0.35
+    require_yolo: true
+    # course classes (FINALIZE.md Phase 1): cones lethal, painted white
+    # lines subtracted from drivable. cone weights: driving_seg's committed
+    # detector; export to .engine ON the Jetson (yolo export format=engine)
+    use_cones: false
+    # Front runs every cycle; one side camera runs every other cycle, alternating
+    # left/right. Inference runs on a bounded latest-frame worker so detector
+    # latency cannot stall costmap publication.
+    yolo_cameras: []
+    primary_detection_camera: "front"
+    secondary_detection_stride: 2
+    cone_cameras: []
+    cone_weights: ${AVL_MODELS_DIR}/cone_det.engine
+    cone_conf: 0.35
+    require_cones: true
+    use_white_lines: true
+    yolo_footprint_frac: 0.25
+    depth_sync_tolerance_sec: 0.05
+    depth_wait_sec: 0.08
+    depth_min_m: 0.3
+    depth_max_m: 15.0
+    depth_obstacle_dilation_m: 0.15
+    # ZED confidence is 0=best, 100=worst. This local gate is stricter than
+    # the wrapper's shared depth threshold and affects obstacle projection only.
+    depth_confidence_max: 70.0
+    depth_edge_erode_px: 1
+    depth_mad_scale: 3.5
+    depth_relative_tolerance: 0.12
+    # Only used when segmentation_method: twinlitenet (see note above).
+    # repo_path must contain a clone of the upstream TwinLiteNetPlus repo;
+    # twinlite_weights must be a TensorRT .engine (the segmenter dispatches on
+    # the .engine suffix -- a .pth here is NOT auto-used as a fallback).
+    twinlite_repo_path: ${AVL_MODELS_DIR}/TwinLiteNetPlus
+    twinlite_weights: ${AVL_MODELS_DIR}/twinlite_nano.engine
+    twinlite_config: nano
+    # velodyne is 0.715 m above ground (URDF: xsens_height+0.159); points are
+    # in the sensor frame, so ground is at z ≈ -0.715
+    lidar_z_min: -0.5             # 0.2 m above ground
+    lidar_z_max: 1.8              # ~2.5 m above ground
+
+    # --- cameras: mounts from avros.urdf.xacro (verified 2026-04-24) ---
+    # ipm_mode camera: homography derived from CameraInfo K + mounting,
+    # so no per-camera point calibration needed.
+    cameras: ["front", "left", "right"]
+    # Forward perception is mandatory for publication. Side loss is reported
+    # as degraded but does not erase still-valid front coverage.
+    required_cameras: ["front"]
+    front:
+      image_topic: /zed_front/zed_node/rgb/color/rect/image
+      camera_info_topic: /zed_front/zed_node/rgb/color/rect/camera_info
+      depth_topic: /zed_front/zed_node/depth/depth_registered
+      confidence_topic: /zed_front/zed_node/confidence/confidence_map
+      ipm_mode: camera
+      cam_x: 0.6795
+      cam_y: 0.0
+      cam_height: 0.4476          # xsens_height 0.5556 - 0.108
+      cam_pitch_deg: 17.0     # person-walk calib 2026-07-09 (was 15)
+      cam_yaw_deg: 0.0
+    left:
+      image_topic: /zed_left/zed_node/rgb/color/rect/image
+      camera_info_topic: /zed_left/zed_node/rgb/color/rect/camera_info
+      depth_topic: /zed_left/zed_node/depth/depth_registered
+      confidence_topic: /zed_left/zed_node/confidence/confidence_map
+      ipm_mode: camera
+      cam_x: 0.098
+      cam_y: 0.286
+      cam_height: 0.6126          # xsens_height + 0.057
+      cam_pitch_deg: 18.0    # person-walk + brick-VP calib 2026-07-09
+      cam_yaw_deg: 94.0    # person-walk calib 2026-07-09
+    right:
+      image_topic: /zed_right/zed_node/rgb/color/rect/image
+      camera_info_topic: /zed_right/zed_node/rgb/color/rect/camera_info
+      depth_topic: /zed_right/zed_node/depth/depth_registered
+      confidence_topic: /zed_right/zed_node/confidence/confidence_map
+      ipm_mode: camera
+      cam_x: 0.098
+      cam_y: -0.286
+      cam_height: 0.6126
+      cam_pitch_deg: 20.0    # person-walk + brick-VP calib 2026-07-09
+      cam_yaw_deg: -86.0    # person-walk calib 2026-07-09
+
+    image_stale_sec: 1.0   # was 0.5: front cam (8 Hz) + tick jitter crossed it, wedge flickered known<->unknown
+    lidar_stale_sec: 0.5
+
+    # 2026-08-12: temporal_miss 0.2 -> 0.4 (now symmetric with temporal_hit).
+    # Root cause of a real stuck-in-shadow incident: dappled tree-shadow
+    # noise during active motion produced a burst of bad per-frame hits that
+    # saturated a cell's confidence to 1.0; at the old asymmetric hit=0.4/
+    # miss=0.2, clearing from max needed 3 consecutive good frames (~375ms
+    # at the front camera's 8 Hz) even after the segmentation itself had
+    # already recovered -- long enough to stall MPPI/the BT. Symmetric
+    # hit/miss still needs 2 consecutive bad frames to mark lethal (same
+    # real-obstacle sensitivity), but now clears in 2 good frames instead of
+    # 3. This ONLY affects the camera road/off-road layer feeding
+    # costmap_to_cloud.py -- STVL (LiDAR) obstacle persistence is a separate,
+    # untouched mechanism, so real physical obstacle detection is unaffected.
+    temporal_hit: 0.4
+    temporal_miss: 0.4
+    temporal_threshold: 0.5
+    # A person becomes an obstacle after one confident detector result and is
+    # cleared conservatively. Vehicles also mark on one result, but clear
+    # faster than people. Generic/classical blobs retain the two-hit policy
+    # above to avoid stopping on single-frame road-texture noise.
+    person_temporal_hit: 0.6
+    person_temporal_miss: 0.2
+    person_temporal_threshold: 0.5
+    vehicle_temporal_hit: 0.5
+    vehicle_temporal_miss: 0.25
+    vehicle_temporal_threshold: 0.5
+    temporal_enabled: true
+    motion_compensation: true
+    odometry_topic: /wheel_odom
+    odometry_stale_sec: 0.5
+    odometry_interpolation_tolerance_sec: 0.1
+    detector_stale_sec: 0.5
+
+    # --- cost shape (see occupancy.build_cost_array) ---
+    # Leaving the road is a failure, not a shortcut: off-road (grass, curb,
+    # kerb, wall) is near-lethal. Deliberately 97 rather than a hard 100 --
+    # if road segmentation drops out (glare, shadow, wet asphalt) a hard 100
+    # everywhere would leave the planner with no legal cell and strand the
+    # car. 97 is avoided as strongly as an obstacle in practice while keeping
+    # a sliver of escape, and stays visually distinct from a true 100 obstacle.
+    offroad_cost: 97
+    # legacy single-halo params: only used if per-class layers are absent
+    inflation_radius: 0.8
+    cost_scaling_factor: 4.0
+
+    # Approach ramp: inflating INWARD from the off-road region makes cost rise
+    # as the car nears the road edge (~13 at 1.0 m in, ~36 at 0.5 m, 97 at the
+    # boundary) instead of a cliff. This is what gives the lane a gradient to
+    # centre in -- and what makes the costmap fade in colour instead of showing
+    # flat plateaus.
+    road_edge_radius: 1.0
+    road_edge_scaling: 1.4
+
+    # Blind-spot infill: unknown cells are guessed from the surrounding
+    # observed ground (Telea inpainting), blended back toward unknown_cost as
+    # distance from the nearest observation grows (exp falloff, metres). A
+    # camera seam surrounded by road reads as road; the deep rear wedge
+    # honestly degrades to the neutral prior.
+    unknown_infill: true
+    infill_falloff: 2.0
+
+    # Trim each camera's coverage 0.4 m inward at the FOV border. The
+    # outermost image pixels segment unreliably, so the ground strip at each
+    # coverage edge read "observed, not road" -> off-road 97 -> phantom red
+    # bands hugging every blind seam. Trimmed cells become unknown and the
+    # infill guesses them from their neighbourhood instead.
+    fov_edge_trim_m: 0.4
+
+    # Semantic safety policy. Every detected object footprint is lethal.
+    # exclusion_radius expands that lethal zone so it survives the >=97
+    # costmap-to-cloud bridge into Nav2; radius/scaling define the softer outer
+    # caution gradient used by the perception costmap and visualization.
+    person_radius: 1.0        # 0-0.2m lethal, ~58 at 0.3m, ~41 at 0.5m, ~24 at 0.8m, free at 1.0m
+    person_scaling: 1.8
+    person_exclusion_radius: 0.2
+    vehicle_radius: 1.2
+    vehicle_scaling: 2.0
+    vehicle_exclusion_radius: 0.15
+    cone_radius: 0.8
+    cone_scaling: 3.5
+    cone_exclusion_radius: 0.10
+    generic_radius: 1.0
+    generic_scaling: 2.5
+    white_line_mode: obstacle
+    white_line_require_grass: false   # no grass indoors/on pavement; the
+                                      # elongation filter is the discriminator
+    white_line_v_min: 190             # 2026-09-17: 165 let 24% of the frame
+                                  # read as white (washed-out floor, V p50=143).
+                                  # 190 -> 1.3% of frame, line-sized.
+    white_line_s_max: 70              # lower to reject coloured surfaces
+    white_line_roi_top_frac: 0.45     # ignore top 45% of frame: above the
+                                      # horizon nothing is on the ground,
+                                      # and IPM projects it to huge false areas
+    white_line_min_elong: 3.0         # raise to reject blobby false positives
+    white_line_exclusion_radius: 0.2   # 0-0.2 m = LETHAL
+    white_line_radius: 0.4             # free beyond 0.4 m
+    white_line_scaling: 4.0            # ~45 at 0.2 m, ~30 at 0.3 m, ~20 at 0.4 m
+    generic_exclusion_radius: 0.12
+    # blind spots are traversable with a mild penalty instead of ROS -1
+    # (operator decision 2026-07-09: assume safe unless obstacles nearby --
+    # obstacle inflation still bleeds into blind cells regardless)
+    unknown_cost: 25
+
+    # --- Simulated potholes (IGVC 2026 rules, S II.2) -------------------
+    # 2 ft (0.61 m) solid white circles on the course. They MUST be avoided
+    # -- contact ends the run -- and they are NOT lane lines. The elongation
+    # gate that selects lines rejects a circle by construction, so without
+    # this class a pothole is invisible to the costmap. Verified 2026-09-17:
+    # the pre-Phase-0 detector returned 0 px for a synthetic pothole.
+    use_potholes: true
+    pothole_min_circularity: 0.70   # 4*pi*A/P^2; a perfect disc is 1.0
+    pothole_exclusion_radius: 0.2   # margin around the disc = LETHAL
+    pothole_radius: 0.8             # free beyond 0.8 m
+    pothole_scaling: 3.0
+
+    # --- Phase 1: detect in the BEV, not the camera frame ---------------
+    # The course line is ~7.6 cm wide (IGVC 2026 S II.2). In the raw frame
+    # that is many pixels near the vehicle and under one pixel far away, so
+    # every image-space size gate is really a range gate. Warping first makes
+    # the width constant, which lets a top-hat matched to that width reject
+    # walls, slabs and barrels by construction rather than by threshold --
+    # measured: a 4x4 m white slab produces ZERO line response.
+    # Cost, measured on this Jetson for all three cameras: 64 ms at
+    # upsample 4, 39 ms at 3, 23 ms at 2 (too thin to filter).
+    line_detect_space: bev
+    bev_upsample: 4                 # 0.025 m/px -> a 3 px line
+    bev_max_range_m: 12.0           # past this the IPM stretch is fiction
+    bev_min_line_length_m: 0.50
+    bev_max_line_width_m: 0.25      # tape is 0.076 m; allow blur + calib slop
+    bev_min_aspect: 3.0             # metric elongation; rejects slab corners
+    bev_response_floor: 25.0        # absolute floor -> empty scene detects nothing
+    bev_min_ridge_contrast: 18.0    # dark-light-dark, tested per side
