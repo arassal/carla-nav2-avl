@@ -36,6 +36,7 @@ Restore the normal stack with `sudo systemctl start percept-stack`.
 | `viz` | `auto` | `costmap_rgb_node` only; `auto` = on when `rviz:=true` |
 | `lidar` | `true` | Velodyne. Without the EKF it logs `"odom" does not exist`; perception doesn't use it |
 | `sensors` | `true` | URDF/TF, Velodyne, Xsens |
+| `costmap_rate` | *(config)* | override `publish_rate` (Hz). Keep >= the fastest camera's rate or frames go unprocessed |
 | `reuse_running` | `true` | skip anything already running instead of starting a second copy |
 
 `--show-args` lists the rest (serials, delays, `ros_domain_id`).
@@ -57,6 +58,23 @@ Restore the normal stack with `sudo systemctl start percept-stack`.
   road-keeping (bridge now reads the node's `offroad_cost` instead of guessing),
   C5 homography scale, C6 depth wait on cameras without depth, C7 detector
   results surviving a reset. Details in `ISSUES.md`.
+
+## Cameras won't open? Ask the doctor
+
+```bash
+deploy/camera_doctor.sh          # name the failure and the fix
+deploy/camera_doctor.sh --stop   # stop every camera client gracefully first
+```
+
+It reads nvargus-daemon and the wrapper logs and says which of four cases you
+have: **HELD** (another process owns the camera), **LINK** (GMSL dropping
+mid-stream -> reseat the cable), **GL** (a camera opened while something held
+the display's GL context -> start RViz after the cameras), or **WEDGED**
+(reboot; do *not* restart the camera daemons).
+
+Always stop cameras with `--stop` (SIGINT, wait) rather than
+`tmux kill-session` or `pkill -9`: a hard kill leaves Argus holding streams
+the next open then trips over.
 
 ## Gotchas that cost us time
 

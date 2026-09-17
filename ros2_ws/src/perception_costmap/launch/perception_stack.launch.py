@@ -212,10 +212,18 @@ def _setup(context):
                        if after_cameras > 0 else rviz)
 
     if steps["costmap"]:
+        params = [cfg["config"]]
+        rate = cfg["costmap_rate"].strip()
+        if rate:
+            # Overrides publish_rate from the config. The tick is created once at
+            # startup, so this cannot be changed with `ros2 param set`.
+            params.append({"publish_rate": float(rate)})
+            actions.append(LogInfo(msg="[perception_stack] costmap publish_rate overridden to %s Hz"
+                                       % rate))
         actions.append(Node(
             package="perception_costmap", executable="costmap_node",
             name="perception_costmap", output="screen",
-            parameters=[cfg["config"]]))
+            parameters=params))
 
     return actions
 
@@ -237,6 +245,10 @@ def generate_launch_description():
         DeclareLaunchArgument("config", default_value=os.path.join(
                                   share, "config", "perception_dinosaur.yaml"),
                               description="perception_costmap params YAML."),
+        DeclareLaunchArgument("costmap_rate", default_value="",
+                              description="Override the costmap publish_rate (Hz). Empty keeps the "
+                                          "config's value. Keep it at or above the fastest camera's "
+                                          "publish rate, or frames are dropped unprocessed."),
         DeclareLaunchArgument("viz", default_value="auto",
                               description="Start costmap_rgb_node (/viz/costmap_rgb, the colorized "
                                           "costmap RViz shows). 'auto' = on when rviz:=true."),
